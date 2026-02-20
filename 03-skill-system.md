@@ -227,6 +227,200 @@ async function handleGetCredentials(req: Request): Response {
 
 ---
 
+## Real-World IaC Skills Ecosystem
+
+The infrastructure skills ecosystem has matured rapidly. Vendors, cloud providers, and the community have published production-grade skills and MCP servers that you can learn from, adopt, or use as templates for your own.
+
+### The Agent Skills Format
+
+The standard format — popularized by [Anthropic's skills spec](https://github.com/anthropics/skills) (72K+ stars) — is structurally simple: a directory with a required `SKILL.md` file containing YAML frontmatter (name, description) plus optional scripts and assets. The frontmatter follows a **three-level progressive disclosure** model:
+
+```yaml
+---
+# Level 1: Frontmatter (always loaded into agent context for discovery)
+name: terraform-style-guide
+description: Write and review Terraform following HashiCorp style conventions
+---
+
+# Level 2: SKILL.md body (loaded on demand when skill is activated)
+## When to Use
+Use when writing new Terraform configurations or reviewing existing HCL...
+
+## Instructions
+Follow these conventions...
+
+## References
+- [reference: ./hashicorp-style-guide.md]  # Level 3: linked files (loaded when needed)
+```
+
+This progressive disclosure keeps context manageable — the agent sees all skill names/descriptions upfront but only loads full instructions when relevant.
+
+### Skills + MCP Together
+
+A powerful pattern now appearing in official ecosystems: **Skills provide the "textbook" (best practices, workflows, guardrails) while MCP provides the "pipe" to live data and tools.**
+
+```
+┌──────────────────────────────────────────────────────┐
+│  SKILL.md                                            │
+│  "When writing Terraform, follow these conventions,  │
+│   use these module patterns, validate with plan..."  │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │  MCP Server (wired via plugin.json)            │  │
+│  │  - Query Terraform Registry for providers      │  │
+│  │  - Read workspace state from Terraform Cloud   │  │
+│  │  - Search module documentation                 │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
+```
+
+HashiCorp's Claude plugin demonstrates this: it bundles skills for Terraform code generation alongside a Docker-run MCP server that gives the agent live access to the Terraform Registry and Terraform Cloud APIs.
+
+### Vendor-Official Skills
+
+#### HashiCorp — [hashicorp/agent-skills](https://github.com/hashicorp/agent-skills)
+
+The most complete vendor skill set for Terraform. Organized into three plugin bundles:
+
+| Plugin | Skills Included | Focus |
+|--------|----------------|-------|
+| `terraform-code-generation` | `terraform-style-guide`, `terraform-test`, `azure-verified-modules` | Writing correct HCL, testing |
+| `terraform-module-generation` | `refactor-module`, `terraform-stacks` | Module extraction, HCP Terraform Stacks |
+| `terraform-provider-development` | `new-terraform-provider`, `provider-actions`, `provider-resources` | Building Terraform providers |
+
+The `refactor-module` skill is notable because it covers **state migration patterns** (`moved` blocks, `terraform state mv`) — high blast radius if executed incorrectly. The `terraform-stacks` skill explicitly recommends **workload identity (OIDC)** and ephemeral tokens.
+
+#### Pulumi — [pulumi/agent-skills](https://github.com/pulumi/agent-skills)
+
+Covers both authoring and migration workflows:
+
+| Category | Skills | Focus |
+|----------|--------|-------|
+| **Authoring** | `pulumi-best-practices`, `pulumi-component`, `pulumi-automation-api`, `pulumi-esc` | Writing Pulumi programs, ESC secrets management |
+| **Migration** | `pulumi-terraform-to-pulumi`, `cloudformation-to-pulumi`, `pulumi-cdk-to-pulumi`, `pulumi-arm-to-pulumi` | Full migration workflows with state translation |
+
+The migration skills emphasize a **"zero-diff preview" requirement** — after importing state, the Pulumi preview must show no changes before considering the migration successful. This is a key safety pattern for any state migration skill.
+
+### Vendor MCP Servers
+
+#### HashiCorp — [hashicorp/terraform-mcp-server](https://github.com/hashicorp/terraform-mcp-server)
+
+Provides live access to the Terraform ecosystem via MCP:
+- **Terraform Registry**: query providers, modules, policies
+- **Terraform Cloud/Enterprise**: workspace CRUD, run management, private registry
+- Supports both `stdio` and `StreamableHTTP` transports
+
+> **Security note**: The repo explicitly warns to restrict `MCP_ALLOWED_ORIGINS` to mitigate cross-origin/DNS rebinding attacks, and recommends local-only use with trusted clients.
+
+#### AWS — [awslabs/mcp](https://github.com/awslabs/mcp)
+
+The AWS MCP monorepo (8K+ stars) contains three IaC-relevant servers:
+
+| Server | Capabilities | Risk Level |
+|--------|-------------|------------|
+| **aws-iac-mcp-server** | CloudFormation/CDK docs search, template validation, compliance checks, deployment troubleshooting | Low (read-only, guidance) |
+| **cfn-mcp-server** | Direct CRUD of 1,100+ AWS resource types via Cloud Control API, IaC Generator | **Very High** (can create/delete resources) |
+| **terraform-mcp-server** | AWS Terraform best practices, Checkov scanning, `terraform plan/apply/destroy` execution | **Very High** (can run apply/destroy) |
+
+> **Critical distinction**: `aws-iac-mcp-server` is guidance-only and safe. `cfn-mcp-server` and `terraform-mcp-server` can make destructive changes — treat them as Tier 3/4 tools requiring explicit approval gates.
+
+#### Pulumi MCP Server
+
+Available as `@pulumi/mcp-server` on npm and `docker pull mcp/pulumi`. Interacts with Pulumi Cloud for stack preview, deploy, output retrieval, and registry queries. Requires OAuth flow and Pulumi Access Token with org scoping.
+
+### Community Skills (Notable)
+
+| Repository | Stars | Focus | Why It's Notable |
+|-----------|-------|-------|-----------------|
+| [antonbabenko/terraform-skill](https://github.com/antonbabenko/terraform-skill) | 1.1K+ | Terraform & OpenTofu | By Anton Babenko (prolific TF community contributor). Comprehensive single-file SKILL.md covering testing, modules, CI/CD, and production patterns |
+| [akin-ozer/cc-devops-skills](https://github.com/akin-ozer/cc-devops-skills) | 70+ | Multi-tool DevOps | 31 skills spanning Terraform, Terragrunt, Ansible, Kubernetes, Helm, GitHub Actions, GitLab CI, Jenkins, PromQL, and more |
+| [terramate-io/agent-skills](https://github.com/terramate-io/agent-skills) | 25+ | Terraform, OpenTofu, Terramate | State splitting, drift reconciliation, stack management |
+| [dirien/claude-skills](https://github.com/dirien/claude-skills) | — | Pulumi (TS/Go/Python) | Pulumi community skills emphasizing ESC + OIDC patterns |
+| [sigridjineth/hello-ansible-skills](https://github.com/sigridjineth/hello-ansible-skills) | 23+ | Ansible | Playbook development, debugging, shell-to-ansible conversion |
+
+### Curated Skill Directories
+
+For discovering more skills:
+
+| Directory | Stars | Description |
+|----------|-------|-------------|
+| [VoltAgent/awesome-agent-skills](https://github.com/VoltAgent/awesome-agent-skills) | 7.5K+ | 300+ agent skills directory, multi-platform |
+| [travisvn/awesome-claude-skills](https://github.com/travisvn/awesome-claude-skills) | 7.3K+ | Curated Claude skills list |
+
+---
+
+## IaC Skill Risk Matrix
+
+Not all skills carry equal risk. Map each to the right controls:
+
+```
+                    READ-ONLY                              WRITE / EXECUTE
+              ┌──────────────────────────────┬──────────────────────────────────┐
+              │                              │                                  │
+  GUIDANCE    │  LOW RISK                    │  MEDIUM RISK                     │
+  (no tool    │  terraform-style-guide       │  refactor-module (state mv)      │
+   calls)     │  pulumi-best-practices       │  terraform-stacks (deploy)       │
+              │  aws-iac-mcp-server          │  migration skills (state import) │
+              │                              │                                  │
+              │  Controls: code review only  │  Controls: + validation gates    │
+              ├──────────────────────────────┼──────────────────────────────────┤
+              │                              │                                  │
+  EXECUTION   │  MEDIUM RISK                 │  VERY HIGH RISK                  │
+  (tool       │  terraform-mcp (registry)    │  cfn-mcp-server (CRUD 1100+)    │
+   calls)     │  pulumi-mcp (query stacks)   │  terraform-mcp (apply/destroy)  │
+              │  checkov scanning            │  aws terraform-mcp (apply)       │
+              │                              │                                  │
+              │  Controls: + credential      │  Controls: + sandbox + approval  │
+              │  scoping + audit             │  gates + separate prod creds     │
+              └──────────────────────────────┴──────────────────────────────────┘
+```
+
+---
+
+## Skill Supply Chain Security
+
+Skills are not "just documentation." They are **executable procedures** that induce tool calls, shell commands, and credential exposure. The industry learned this the hard way:
+
+- **Malicious skill marketplaces**: mass uploads of stealer malware disguised as useful skills
+- **"Markdown is an installer"**: a skill's setup instructions led to malicious infrastructure and a staged payload chain
+- **Prompt injection via skills**: instructions embedded in SKILL.md can manipulate agent behavior
+- **Remote content fetching**: skills that `curl` external URLs at runtime are indirect injection vectors
+
+### Vetting Checklist for IaC Skills
+
+```
+BEFORE INSTALLING ANY SKILL:
+
+[ ] Source is vendor-official or from a known, trusted publisher
+[ ] Reviewed SKILL.md for suspicious instructions (fetch URLs, run scripts, disable security)
+[ ] No embedded scripts that execute on install or setup
+[ ] No references to external URLs that fetch content at runtime
+[ ] Pinned to a specific version/commit hash (never "latest")
+[ ] If from a marketplace: check scanning results, publisher history, star count
+[ ] If it touches credentials: verify it recommends OIDC/short-lived tokens, not static keys
+[ ] If it can run apply/destroy: ensure it's behind approval gates in your system
+
+ONGOING:
+
+[ ] Re-scan periodically (skills can be updated maliciously)
+[ ] Monitor for CVEs in skill dependencies
+[ ] Maintain an internal allowlist of approved skills
+[ ] Block unknown publishers by default
+```
+
+### The Safe Default: Read-Only + PR-First
+
+For IaC skills, the safe adoption posture is:
+
+1. **In development**: Skills can generate code and propose diffs
+2. **In CI**: Skills can run `plan`/`preview`/`validate` and produce reports
+3. **In production**: Skills open PRs — they never `apply` directly
+4. **For apply/destroy**: Require explicit "break-glass" approval with separate credentials
+
+This matches how the vendor skills are designed: HashiCorp's skills produce guidance and encourage plan verification; Pulumi's migration skills mandate "zero-diff preview" before considering success.
+
+---
+
 ## Skill Hydration: Loading Skills at Runtime
 
 Before the agent starts, the worker writes skill files to the working directory based on the agent's configuration:
