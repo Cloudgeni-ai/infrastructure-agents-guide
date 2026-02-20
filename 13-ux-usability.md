@@ -1,4 +1,4 @@
-# Chapter 14: UX, Usability & Team Onboarding
+# Chapter 13: UX, Usability & Team Onboarding
 
 > How to package infrastructure agents so everyone can adopt them safely — without reading a 13-chapter guide first.
 

@@ -1,4 +1,4 @@
-# Chapter 13: Risk Framework & Checklists
+# Chapter 14: Risk Framework & Checklists
 
 > Decision matrices, compliance mapping, and go-live checklists for infrastructure agents.
 
@@ -267,8 +267,6 @@ Get them wrong, and you have the incidents documented in the report: malicious s
 The difference is architecture.
 
 ---
-
-**Next Chapter**: [Chapter 14 — UX & Usability](./14-ux-usability.md) — Multi-tenancy, RBAC, onboarding, team collaboration, and error prevention.
 
 ---
 
