@@ -44,6 +44,7 @@ Every pattern here is battle-tested in production at Cloudgeni, where we operate
 | 11 | [Session & State Management](./11-session-state.md) | Multi-turn conversations, persistence, session forking |
 | 12 | [Testing & Hardening](./12-testing-hardening.md) | Trajectory tests, prompt injection defense, security benchmarks |
 | 13 | [Risk Framework & Checklists](./13-risk-framework.md) | Decision matrices, compliance mapping, go-live checklists |
+| 14 | [UX & Usability](./14-ux-usability.md) | Multi-tenancy, RBAC, onboarding, team collaboration, error prevention |
 
 ---
 

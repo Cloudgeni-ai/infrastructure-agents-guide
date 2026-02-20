@@ -268,4 +268,8 @@ The difference is architecture.
 
 ---
 
+**Next Chapter**: [Chapter 14 — UX & Usability](./14-ux-usability.md) — Multi-tenancy, RBAC, onboarding, team collaboration, and error prevention.
+
+---
+
 *Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*
