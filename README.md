@@ -1,20 +1,14 @@
-# Building Infrastructure Agents: The Definitive Guide
+# Infrastructure Agents Guide
+
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
+[![Code License: MIT](https://img.shields.io/badge/Code_License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Chapters: 14](https://img.shields.io/badge/Chapters-14-green.svg)](#guide-structure)
 
 > How to design, build, and operate AI agents for infrastructure teams — safely.
 
-**By [Cloudgeni](https://cloudgeni.ai)** — the team that built and operates infrastructure agents in production.
+AI agents can write IaC, fix compliance findings, detect drift, review PRs, and respond to incidents — all autonomously. But autonomy without guardrails is a liability. Agents that can `terraform apply` can also `terraform destroy`. Agents that read configs can leak secrets. Agents that loop can burn budgets.
 
----
-
-## Why This Guide Exists
-
-AI agents are transforming how infrastructure teams work. They can write IaC, fix compliance findings, detect drift, review PRs, and respond to incidents — all autonomously.
-
-But autonomy without guardrails is a liability. Agents that can `terraform apply` can also `terraform destroy`. Agents that read configs can leak secrets. Agents that loop can burn budgets. The industry has learned this the hard way through malicious skill marketplaces, enterprise bans, framework CVEs, and runaway cost incidents.
-
-**This guide is the missing manual.** It covers every architectural decision you need to make when building infrastructure agents — with real patterns, code snippets, alternatives, and the risk framework to evaluate your choices.
-
-Every pattern here is battle-tested in production at Cloudgeni, where we operate autonomous agents that manage infrastructure across AWS, Azure, GCP, and OCI for enterprise teams.
+**This guide is the missing manual.** Every architectural decision you need to make when building infrastructure agents — with real patterns, code snippets, multiple alternatives, and the risk framework to evaluate your choices.
 
 ---
 
@@ -50,22 +44,11 @@ Every pattern here is battle-tested in production at Cloudgeni, where we operate
 
 ## Core Principles
 
-Before diving into architecture, these principles guide every design decision:
-
-### 1. Agents Never Deploy Directly
-Every infrastructure change flows through a pull request. The agent produces diffs, not deployments. Humans (or automated CI) decide when to merge and apply.
-
-### 2. Least Privilege by Default
-Agents get the minimum credentials and tool access needed for their task. Privileges are scoped, time-limited, and auditable.
-
-### 3. Observability Is Not Optional
-Every tool call, credential request, and decision point is logged with correlation IDs. If you can't explain why the agent did something, you can't trust it.
-
-### 4. Fail Safe, Not Fail Open
-When in doubt, the agent stops and asks a human. Timeouts, iteration limits, and policy gates are structural — not suggestions the model can ignore.
-
-### 5. The Agent Is Not Special
-Agent-initiated changes go through the same review, CI, and deployment pipelines as human-initiated changes. No shortcuts.
+1. **Agents Never Deploy Directly** — Every infrastructure change flows through a pull request. The agent produces diffs, not deployments.
+2. **Least Privilege by Default** — Agents get the minimum credentials and tool access needed. Privileges are scoped, time-limited, and auditable.
+3. **Observability Is Not Optional** — Every tool call, credential request, and decision point is logged with correlation IDs.
+4. **Fail Safe, Not Fail Open** — When in doubt, the agent stops and asks a human. Timeouts and policy gates are structural — not suggestions.
+5. **The Agent Is Not Special** — Agent-initiated changes go through the same review, CI, and deployment pipelines as human-initiated changes.
 
 ---
 
@@ -124,12 +107,28 @@ This guide doesn't prescribe a single stack. For each architectural layer, we co
 
 ---
 
-## License
+## Contributing
 
-This guide is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Use it, adapt it, share it — just give credit.
+Found an error? Have a better pattern? Contributions are welcome.
 
-The code snippets are released under [MIT](https://opensource.org/licenses/MIT).
+- **Issues** — Open an issue for questions, suggestions, or corrections
+- **Pull Requests** — Submit a PR for content improvements or new examples
+- **Discussions** — Use GitHub Discussions for broader architectural questions
+
+Please keep contributions focused on patterns and architecture — not vendor-specific marketing.
 
 ---
 
-*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*
+## About
+
+This guide is built by the team at **[Cloudgeni](https://cloudgeni.ai)**, where we design, build, and operate autonomous infrastructure agents in production across AWS, Azure, GCP, and OCI for enterprise teams.
+
+Every pattern here is drawn from real production experience. We open-sourced this guide because the industry needs shared knowledge on how to build these systems safely — and because we believe the best way to advance the field is to be transparent about the hard problems.
+
+---
+
+## License
+
+The guide text is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Use it, adapt it, share it — just give credit.
+
+Code snippets are released under [MIT](https://opensource.org/licenses/MIT).
