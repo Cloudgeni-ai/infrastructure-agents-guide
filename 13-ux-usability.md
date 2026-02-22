@@ -764,6 +764,10 @@ SAFETY
 8. **Plain language policies** — no DSL to learn, version-controlled, auditable
 9. **Per-user notifications with quiet hours** — don't burn out the team
 
+## Next Chapter
+
+[Chapter 14: Risk Framework & Checklists →](./14-risk-framework.md)
+
 ---
 
 *Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*
