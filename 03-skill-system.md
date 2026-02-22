@@ -38,7 +38,7 @@ Instead of registering tool handlers in code, write skills as files that the age
     └── client.ts
 ```
 
-### Why This Pattern Is Elegant
+### Why this works
 
 1. **Self-documenting** — The agent reads SKILL.md to understand what the skill does, when to use it, and what constraints apply
 2. **Typed execution** — client.ts provides a typed interface; the agent imports and calls functions
@@ -229,7 +229,7 @@ async function handleGetCredentials(req: Request): Response {
 
 ## Real-World IaC Skills Ecosystem
 
-The infrastructure skills ecosystem has matured rapidly. Vendors, cloud providers, and the community have published production-grade skills and MCP servers that you can learn from, adopt, or use as templates for your own.
+Vendors, cloud providers, and the community have published production-grade skills and MCP servers. You can adopt them directly, use them as templates, or just study the patterns.
 
 ### The Agent Skills Format
 
@@ -253,11 +253,11 @@ Follow these conventions...
 - [reference: ./hashicorp-style-guide.md]  # Level 3: linked files (loaded when needed)
 ```
 
-This progressive disclosure keeps context manageable — the agent sees all skill names/descriptions upfront but only loads full instructions when relevant.
+The agent loads full instructions only when a skill is activated — names and descriptions stay in context for discovery.
 
 ### Skills + MCP Together
 
-A powerful pattern now appearing in official ecosystems: **Skills provide the "textbook" (best practices, workflows, guardrails) while MCP provides the "pipe" to live data and tools.**
+Skills and MCP serve different roles: **skills define best practices and workflows; MCP connects to live data and tool APIs.** They compose well together.
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -571,16 +571,6 @@ server.tool('terraform_plan', { pipelineId: z.string() }, async ({ pipelineId })
   return { content: [{ type: 'text', text: JSON.stringify(result) }] };
 });
 ```
-
----
-
-## Key Takeaways
-
-1. **Skills = documentation + typed code** — the agent learns by reading and acts by executing
-2. **Internal HTTP server** is the bridge between sandboxed skill code and platform capabilities
-3. **Allow/deny lists** constrain what each agent type can do
-4. **Hydrate at runtime** — inject only the skills needed for this specific task
-5. **Policy enrichment** — weave org-specific constraints into skill documentation
 
 ---
 

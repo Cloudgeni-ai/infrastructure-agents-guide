@@ -4,7 +4,7 @@
 
 ---
 
-## Why Sandboxing Is Non-Negotiable
+## Why You Need Sandboxing
 
 Infrastructure agents execute code, run CLI tools, and interact with cloud APIs. If the LLM is manipulated (via prompt injection, hallucination, or a malicious skill), the blast radius equals the agent's access level.
 
@@ -14,7 +14,7 @@ Without sandboxing:
 - Agent can escalate privileges via the host OS
 - A crash can take down the whole system
 
-**Sandboxing = defense in depth.** Even if the policy layer fails, the sandbox limits damage.
+Sandboxing is your fallback when the policy layer fails. Even if prompt rules are bypassed, the sandbox limits damage.
 
 ---
 
@@ -32,7 +32,7 @@ Less Isolation                                         More Isolation
   Free          Free        Free             Complex       Expensive
 ```
 
-For most infrastructure agents, **container + network policies** hits the sweet spot.
+For most infrastructure agents, **container + network policies** is the right tradeoff.
 
 ---
 
@@ -464,17 +464,6 @@ DENY:
 ```
 
 > **Critical**: Always block cloud metadata endpoints (169.254.169.254). A compromised agent hitting the metadata endpoint can steal instance credentials and escalate privileges.
-
----
-
-## Key Takeaways
-
-1. **Container isolation is the minimum** — process-level isolation is not enough for infra agents
-2. **Ephemeral containers** — create per task, destroy after completion
-3. **Block metadata endpoints** — this is the #1 privilege escalation vector
-4. **Choose your sandbox** based on your cloud, scale, and control requirements
-5. **Network egress rules** are as important as container isolation
-6. **Managed identity** eliminates credential storage (Azure Container Apps, AWS IAM roles)
 
 ---
 

@@ -6,7 +6,7 @@
 
 ## Testing Agents Is Different
 
-You can't unit test an agent the same way you test a function. Agent behavior is:
+Agent behavior is:
 - **Non-deterministic** — same input may produce different tool call sequences
 - **Multi-step** — a single test case spans many LLM calls and tool executions
 - **Context-dependent** — behavior changes based on accumulated state
@@ -298,16 +298,6 @@ ONGOING:
 [ ] Review agent action trails for anomalies
 [ ] Update system prompts when new risk patterns emerge
 ```
-
----
-
-## Key Takeaways
-
-1. **Three levels of testing**: unit (tools), trajectory (behavior sequences), adversarial (injection resistance)
-2. **Trajectory tests** are the most important — they catch behavioral regressions
-3. **Structural guardrails beat prompt guardrails** — don't rely on the model to "behave"
-4. **Test for what the agent SHOULDN'T do**, not just what it should
-5. **Security is ongoing** — new injection techniques emerge regularly
 
 ---
 

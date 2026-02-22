@@ -10,18 +10,18 @@
 
 No API keys in environment variables. No service principal secrets in config files. No SSH keys on disk. The agent requests credentials just-in-time from a broker, gets a short-lived token scoped to the minimum required permissions, and the token expires automatically.
 
-This is the single most important security pattern for infrastructure agents.
+Get this wrong and nothing else matters.
 
 ---
 
-## Why This Matters
+## What Happens When You Don't
 
-The report on autonomous agents documents multiple real-world incidents:
+Real-world incidents from production agent deployments:
 - **Infostealer malware** targeting agent config directories to extract API keys and auth tokens
 - **Prompt injection** causing agents to exfiltrate credentials via tool calls
 - **Framework CVEs** enabling secret extraction from serialized agent state
 
-If credentials are short-lived and narrowly scoped, all of these attacks have limited blast radius.
+Short-lived, narrowly-scoped tokens turn all of these from catastrophic breaches into time-boxed incidents.
 
 ---
 
@@ -299,17 +299,6 @@ const item = await response.json();
 | Shared credentials across agents | One compromised agent = all agents compromised | Per-agent, per-session token issuance |
 | Credentials in LLM prompts | Model can repeat them in output | Inject into tool environment, not prompt text |
 | No credential expiry | Compromised tokens live forever | 1h TTL with no renewal option |
-
----
-
-## Key Takeaways
-
-1. **Short-lived tokens only** — 1 hour max, no renewal
-2. **Credential broker** validates every request against task context and policy
-3. **API server holds secrets**, workers/agents never do
-4. **Audit every issuance** — who, what scope, when, which agent session
-5. **Block metadata endpoints** — prevents credential theft via SSRF
-6. **Use managed identity** where possible (Azure Container Apps, AWS IAM roles)
 
 ---
 

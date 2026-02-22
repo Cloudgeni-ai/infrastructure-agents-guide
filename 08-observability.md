@@ -329,16 +329,6 @@ function redactSensitive(text: string): string {
 
 ---
 
-## Key Takeaways
-
-1. **Action trails** are the core primitive — structured events of what the agent did, not chat transcripts
-2. **Correlation IDs** tie everything together: dispatch → execution → output → PR
-3. **OpenTelemetry** as the instrumentation standard — export to any backend
-4. **Redact by default** — agent logs will contain sensitive data
-5. **Dashboard for operations** — active sessions, success rate, token usage, queue depth
-
----
-
 ## Next Chapter
 
 [Chapter 9: Scheduled & Autonomous Operations →](./09-scheduled-autonomous.md)

@@ -8,7 +8,7 @@
 
 AI agents can write IaC, fix compliance findings, detect drift, review PRs, and respond to incidents — all autonomously. But autonomy without guardrails is a liability. Agents that can `terraform apply` can also `terraform destroy`. Agents that read configs can leak secrets. Agents that loop can burn budgets.
 
-**This guide is the missing manual.** Every architectural decision you need to make when building infrastructure agents — with real patterns, code snippets, multiple alternatives, and the risk framework to evaluate your choices.
+**This guide covers every architectural decision** you need to make when building infrastructure agents — with real patterns, code snippets, multiple alternatives, and the risk framework to evaluate your choices.
 
 ---
 
@@ -17,7 +17,7 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 - **Platform engineers** evaluating whether to build or buy agent capabilities
 - **SREs** designing safe automation for incident response and remediation
 - **DevOps leads** building self-service IaC platforms
-- **Engineering leaders** who need a defensible architecture for AI-powered infrastructure
+- **Engineering leaders** who need a reviewed architecture for AI-driven infrastructure
 
 ---
 
@@ -25,7 +25,7 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 
 | # | Chapter | What You'll Learn |
 |---|---------|-------------------|
-| 1 | [Architecture Overview](./01-architecture.md) | The six planes of a robust infra-agent system |
+| 1 | [Architecture Overview](./01-architecture.md) | The six planes of an infra-agent system |
 | 2 | [Agent Runtime & Orchestration](./02-agent-runtime.md) | Task queuing, worker isolation, consumer groups |
 | 3 | [Skill & Tool System](./03-skill-system.md) | How agents gain capabilities safely |
 | 4 | [Sandboxed Execution](./04-sandboxed-execution.md) | Container isolation with Docker, Modal, Azure Container Apps |
@@ -123,7 +123,7 @@ Please keep contributions focused on patterns and architecture — not vendor-sp
 
 This guide is built by the team at **[Cloudgeni](https://cloudgeni.ai)**, where we design, build, and operate autonomous infrastructure agents in production across AWS, Azure, GCP, and OCI for enterprise teams.
 
-Every pattern here is drawn from real production experience. We open-sourced this guide because the industry needs shared knowledge on how to build these systems safely — and because we believe the best way to advance the field is to be transparent about the hard problems.
+Every pattern here comes from running these systems in production. We open-sourced it because we kept answering the same architectural questions — writing them down once seemed more useful.
 
 ---
 

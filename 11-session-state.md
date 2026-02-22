@@ -13,8 +13,6 @@ Infrastructure agent sessions aren't like chat sessions. They can:
 - **Fork** — user wants to try a different approach from a conversation midpoint
 - **Resume** — user returns with follow-up questions days later
 
-You need a state management system that handles all of this.
-
 ---
 
 ## Session Lifecycle
@@ -325,17 +323,6 @@ async function handleUserMessage(sessionId: string, message: string) {
   }
 }
 ```
-
----
-
-## Key Takeaways
-
-1. **Keep agents alive between turns** — avoid cold restart latency on follow-ups
-2. **Git bundles** for efficient working directory persistence
-3. **Parallel restore** — git state + session files simultaneously
-4. **Session forking** enables "undo" — branch from a conversation midpoint
-5. **Message queuing** handles follow-ups while the agent is busy
-6. **Worker-agnostic persistence** — any worker can resume any session
 
 ---
 

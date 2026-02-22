@@ -1,6 +1,6 @@
 # Chapter 10: Notifications & Alerting
 
-> Keeping humans informed about what agents are doing, and escalating when they need help.
+> Slack, Teams, PagerDuty, email integration, escalation chains, and daily digests.
 
 ---
 
@@ -11,7 +11,7 @@ Autonomous agents run in the background. Without a notification system, you have
 1. **Agent succeeds silently** — nobody reviews the PR, value is lost
 2. **Agent fails silently** — problems compound until a human notices
 
-A good notification system makes agent work **visible** and **actionable**.
+The notification system's job: make sure PRs get reviewed and failures get fixed.
 
 ---
 
@@ -405,17 +405,6 @@ async function escalate(event: NotificationEvent, level: number = 0) {
   }
 }
 ```
-
----
-
-## Key Takeaways
-
-1. **Route by severity** — info to Slack, urgent to PagerDuty
-2. **Actionable notifications** — include PR links, finding details, direct action buttons
-3. **Deduplicate** — don't flood channels with repeated events
-4. **Daily digests** complement individual notifications
-5. **Escalation chains** ensure critical failures don't go unnoticed
-6. **Custom webhooks** enable integration with any system
 
 ---
 

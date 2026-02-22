@@ -6,7 +6,7 @@
 
 ## Beyond Chat: Agents That Run on Their Own
 
-Most agent guides focus on interactive chat. But the highest-value infrastructure agent use cases are **fully autonomous** — agents that run on a schedule, detect problems, fix them, and report results without any human initiating the conversation.
+Interactive chat gets the demos. But the most consistent value comes from **fully autonomous** agents — running on a schedule, detecting problems, fixing them, and reporting results without any human initiating the conversation.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -396,17 +396,6 @@ async function staggeredDispatch(
   }
 }
 ```
-
----
-
-## Key Takeaways
-
-1. **Scheduled operations are the highest-value use case** — continuous drift detection, compliance scanning, cost optimization
-2. **Separate scheduling from execution** — scheduler triggers API, API dispatches to queue
-3. **Match scheduling tech to your cloud** — EventBridge for AWS, Timer Functions for Azure, CronJobs for K8s
-4. **Stagger dispatches** to avoid overwhelming queues and APIs
-5. **Auto-remediation is opt-in** — always allow per-repo/per-org configuration
-6. **Event-driven triggers** (webhooks) complement scheduled scans for real-time response
 
 ---
 

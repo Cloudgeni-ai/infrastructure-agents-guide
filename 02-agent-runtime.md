@@ -14,8 +14,6 @@ An infrastructure agent isn't a simple request-response API call. It's a **long-
 - May need to pause and resume (human-in-the-loop)
 - Must not interfere with other concurrent agents
 
-This chapter covers how to build the runtime that handles all of this.
-
 ---
 
 ## Task Dispatch Architecture
@@ -487,17 +485,6 @@ app.get('/api/v1/sessions/:sessionId/runs/:runId/events', (req, res) => {
 | AWS Lambda + SQS | ~1s cold start | Pay-per-use | Medium | AWS-native, short tasks (<15min) |
 | Temporal + Workers | Low (warm) | Fixed + Temporal server | High | Complex multi-step, durable workflows |
 | Kubernetes Jobs | ~5s | Cluster cost | High | Full control, multi-cloud |
-
----
-
-## Key Takeaways
-
-1. **Separate dispatch from output** — use consumer groups for load balancing, event streams for observability
-2. **Workers should be stateless** — never write to the database directly
-3. **Plan for crashes** — heartbeats + watchdogs + PEL recovery
-4. **Route by task type** — different tasks need different compute profiles
-5. **Stream output in real-time** — agents are slow, users need visibility
-6. **Choose your deployment model** based on your workload pattern (steady vs bursty)
 
 ---
 

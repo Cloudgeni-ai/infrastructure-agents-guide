@@ -251,7 +251,7 @@ Redis Streams with consumer groups for dispatch, separate streams for output.
 
 ## Summary
 
-Building infrastructure agents safely requires disciplined engineering across six planes:
+The six planes of an infrastructure agent system:
 
 1. **Ingestion** — how work enters the system (webhooks, schedules, chat, APIs)
 2. **Policy** — what agents are allowed to do (tiers, tool lists, budgets)
@@ -260,13 +260,7 @@ Building infrastructure agents safely requires disciplined engineering across si
 5. **Change Control** — how changes land (PRs, validation loops, CI/CD)
 6. **Observability** — how you see what happened (action trails, OTel, notifications)
 
-Get these right, and you have a system that **multiplies your team's capacity** without multiplying your risk.
-
-Get them wrong, and you have the incidents documented in the report: malicious skills, credential theft, runaway costs, and enterprise bans.
-
-The difference is architecture.
-
----
+Get them wrong and you get the incidents from the report: malicious skills, credential theft, runaway costs, and enterprise bans.
 
 ---
 

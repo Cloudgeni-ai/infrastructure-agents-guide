@@ -8,7 +8,7 @@
 
 An infrastructure agent system isn't just "an LLM with tools." It's a distributed system where untrusted language model output drives privileged infrastructure operations. Getting the architecture right is the difference between a productivity multiplier and an incident generator.
 
-A robust architecture separates into **six interacting planes**:
+The architecture separates into **six interacting planes**:
 
 ```mermaid
 graph TB
@@ -101,7 +101,7 @@ interface AgentTask {
 
 ## Plane 2: Policy
 
-The policy plane is **the most important plane** in your architecture. It decides what agents are allowed to do before they do it.
+The policy plane gates every action before execution. It decides what agents are allowed to do before they do it.
 
 ### Core Concept: Autonomy Tiers
 

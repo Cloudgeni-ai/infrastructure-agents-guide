@@ -10,7 +10,7 @@
 Agent writes code → Agent creates PR → CI validates → Human reviews → CI applies
 ```
 
-This is not optional. This is not a suggestion. This is the architectural boundary that prevents an infrastructure agent from becoming an infrastructure incident.
+Treat this as a hard architectural constraint, not a guideline.
 
 ---
 
@@ -138,7 +138,7 @@ function hasRemainingDrift(result: PipelineResult): boolean {
 
 ## PR Body Format
 
-A well-structured PR body is critical for human reviewers:
+Give reviewers full context in the PR body:
 
 ```markdown
 ## Summary
@@ -317,17 +317,6 @@ Encode safety rules directly into the agent's system prompt:
 7. NEVER modify files outside the repository's IaC directories
 8. ALWAYS commit with a descriptive message referencing the finding
 ```
-
----
-
-## Key Takeaways
-
-1. **PRs are the safety boundary** — agents produce diffs, not deployments
-2. **Validate before PR** — run plan/what-if in a loop until drift is zero
-3. **Cap iterations** — prevent infinite loops with hard limits
-4. **Rich PR bodies** — give reviewers full context (finding, plan output, iterations)
-5. **Encode hard rules in prompts** — no main branch push, no direct apply
-6. **Use your existing CI/CD** — agents create PRs, your pipeline handles the rest
 
 ---
 

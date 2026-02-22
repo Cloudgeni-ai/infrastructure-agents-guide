@@ -6,11 +6,9 @@
 
 ## The Usability Problem
 
-You've built the agent runtime, the sandbox, the credential broker, the policy engine, the observability stack. Congratulations — you now have a system that only you understand.
+You've built the agent runtime, the sandbox, the credential broker, the policy engine, the observability stack. You now have a system that only you understand.
 
-The real test isn't whether infrastructure agents *work*. It's whether a **platform team of 3 can serve 50 engineers across 5 teams** without becoming a bottleneck, and without a junior developer accidentally giving an agent admin credentials to production.
-
-This chapter covers the UX and organizational patterns that make the difference between a research project and a production platform.
+The hard part isn't making agents work. It's making them usable by a **platform team of 3 serving 50 engineers across 5 teams** without becoming a bottleneck, and without a junior developer accidentally giving an agent admin credentials to production.
 
 ---
 
@@ -85,11 +83,11 @@ enum OrganizationType {
 }
 ```
 
-Importing from VCS providers is powerful: when a team connects their GitHub org, repositories and team structure come for free. New VCS members can auto-join the organization if the admin enables it.
+Importing from VCS providers pulls in repositories and team structure automatically — no manual configuration per repo. New VCS members can auto-join the organization if the admin enables it.
 
 ### Data Isolation Implementation
 
-Every database query must include the organization filter. This is non-negotiable.
+Every database query must include the organization filter.
 
 ```typescript
 // Every route is under /api/v1/organizations/:orgId/...
@@ -159,7 +157,7 @@ The key insight: **don't rely on roles to prevent junior developers from making 
 
 ### Invitation Flow
 
-Make team onboarding frictionless:
+Keep the invitation flow simple:
 
 ```typescript
 // Smart invite: check if user already exists
@@ -427,7 +425,7 @@ Session List:
 
 ### Why Not Real-Time Collaboration?
 
-Unlike Google Docs, infrastructure agent sessions are primarily **sequential** — one user asks, the agent responds. Real-time multi-cursor editing adds complexity without proportional value. Instead:
+Agent sessions are **sequential** — one user asks, the agent responds. Real-time multi-cursor editing adds complexity you don't need. Instead:
 
 - **Sharing** lets others view what the agent did and the PRs it created
 - **Forking** lets another team member continue from a specific point
@@ -751,18 +749,6 @@ SAFETY
 ```
 
 ---
-
-## Key Takeaways
-
-1. **Organization = security boundary** — all data, all credentials, all agents scoped to org
-2. **Admin sets up, members use** — credentials, pipelines, and policies are admin territory
-3. **Quick Connect** reduces cloud onboarding from hours to seconds
-4. **Two mandatory steps** — cloud + git. Everything else is progressive.
-5. **Chat-first UX** with smart selectors — members pick from pre-configured options
-6. **Structural prevention** over role-based prevention — make mistakes impossible, not forbidden
-7. **Default-private, opt-in sharing** — respect that infra details are sensitive
-8. **Plain language policies** — no DSL to learn, version-controlled, auditable
-9. **Per-user notifications with quiet hours** — don't burn out the team
 
 ## Next Chapter
 

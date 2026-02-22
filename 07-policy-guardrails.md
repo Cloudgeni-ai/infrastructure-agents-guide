@@ -6,7 +6,7 @@
 
 ## The Policy Plane
 
-Policy is **the real product** in an infrastructure agent system. The LLM decides *what* to do; policy decides *whether it's allowed*. Without policy, you have a very expensive way to create incidents.
+Policy determines what the agent is actually allowed to do. The LLM decides *what* to do; policy decides *whether it's allowed*.
 
 ---
 
@@ -41,7 +41,7 @@ Policy is **the real product** in an infrastructure agent system. The LLM decide
 └──────────────────────────────────────────────────┘
 ```
 
-**Important**: Never rely on a single layer. Layer 2 (prompt rules) is the weakest — models can be manipulated. Layers 1 and 3 must catch what Layer 2 misses.
+Layer 2 (prompt rules) is the weakest — models can be manipulated. Layers 1 and 3 must catch what Layer 2 misses.
 
 ---
 
@@ -264,16 +264,6 @@ class BudgetTracker {
   recordToolCall() { this.toolCalls++; }
 }
 ```
-
----
-
-## Key Takeaways
-
-1. **Three layers of defense** — structural, prompt-level, and runtime policy
-2. **Autonomy tiers** bind risk level to permissions
-3. **Organization policies** in plain language, injected at dispatch time
-4. **HITL checkpoints** for high-impact decisions
-5. **Hard budgets** on turns, tokens, time, and tool calls — enforced in code, not prompts
 
 ---
 
