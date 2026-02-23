@@ -408,40 +408,6 @@ For most infrastructure agents, **hourly cloud scans + git webhook triggers for 
 
 ---
 
-## Implementation Checklist
-
-```
-DATA COLLECTION
-[ ] Cloud resource scanning for each provider (custom or CloudQuery/Steampipe)
-[ ] Relationship extraction during resource scan
-[ ] IaC state parsing (Terraform state, Bicep what-if)
-[ ] Compliance finding ingestion (from your security scanner of choice)
-[ ] Cost data sync from billing APIs
-
-STORAGE & CORRELATION
-[ ] Normalized resource model (provider-agnostic identity + full properties as JSON)
-[ ] Relationship edge table (source, target, type)
-[ ] Cloud ↔ IaC correlation by provider resource ID
-[ ] Cloud ↔ Compliance correlation by provider resource ID
-[ ] Organizational knowledge indexed and searchable
-
-AGENT ACCESS
-[ ] Skill API: query cloud resources (filtered, paginated)
-[ ] Skill API: query compliance findings (filtered, paginated)
-[ ] Skill API: traverse resource relationships (configurable depth)
-[ ] Skill API: search organizational knowledge
-[ ] Serialization to markdown for LLM-readable context
-[ ] Context injection at dispatch time for focused tasks
-
-DATA FRESHNESS
-[ ] Scheduled scan pipeline with configurable frequency
-[ ] Git webhook triggers for IaC state updates
-[ ] Last-scanned timestamp on every resource
-[ ] Event-driven updates for fast-changing data (optional)
-```
-
----
-
 ## Next Chapter
 
 [Chapter 7: Change Control & GitOps →](./07-change-control.md)
