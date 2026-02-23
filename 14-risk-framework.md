@@ -262,6 +262,10 @@ The six planes of an infrastructure agent system:
 
 Get them wrong and you get the incidents from the report: malicious skills, credential theft, runaway costs, and enterprise bans.
 
+## Next Chapter
+
+[Chapter 15: The Data Plane →](./15-data-plane.md)
+
 ---
 
 *Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*

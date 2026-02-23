@@ -2,7 +2,7 @@
 
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Code License: MIT](https://img.shields.io/badge/Code_License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Chapters: 14](https://img.shields.io/badge/Chapters-14-green.svg)](#guide-structure)
+[![Chapters: 15](https://img.shields.io/badge/Chapters-15-green.svg)](#guide-structure)
 
 > How to design, build, and operate AI agents for infrastructure teams — safely.
 
@@ -39,6 +39,7 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 | 12 | [Testing & Hardening](./12-testing-hardening.md) | Trajectory tests, prompt injection defense, security benchmarks |
 | 13 | [UX & Usability](./13-ux-usability.md) | Multi-tenancy, RBAC, onboarding, team collaboration, error prevention |
 | 14 | [Risk Framework & Checklists](./14-risk-framework.md) | Decision matrices, compliance mapping, go-live checklists |
+| 15 | [The Data Plane](./15-data-plane.md) | Infrastructure knowledge layer, resource graphs, context serialization |
 
 ---
 
