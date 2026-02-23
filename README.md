@@ -2,7 +2,7 @@
 
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Code License: MIT](https://img.shields.io/badge/Code_License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Chapters: 15](https://img.shields.io/badge/Chapters-15-green.svg)](#guide-structure)
+[![Chapters: 14](https://img.shields.io/badge/Chapters-14-green.svg)](#guide-structure)
 
 > How to design, build, and operate AI agents for infrastructure teams — safely.
 
@@ -30,16 +30,15 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 | 3 | [Skill & Tool System](./03-skill-system.md) | How agents gain capabilities safely |
 | 4 | [Sandboxed Execution](./04-sandboxed-execution.md) | Container isolation with Docker, Modal, Azure Container Apps |
 | 5 | [Credential Management](./05-credential-management.md) | Short-lived tokens, vault patterns, blast radius control |
-| 6 | [Change Control & GitOps](./06-change-control.md) | PR-based workflows, drift verification, validation loops |
-| 7 | [Policy & Guardrails](./07-policy-guardrails.md) | Tool restrictions, approval gates, autonomy tiers |
-| 8 | [Observability & Audit](./08-observability.md) | OpenTelemetry, action trails, debugging agent failures |
-| 9 | [Scheduled & Autonomous Operations](./09-scheduled-autonomous.md) | Cron-triggered scans, continuous drift detection, autonomous remediation |
-| 10 | [Notifications & Alerting](./10-notifications.md) | Slack/Teams/email integration, escalation chains, status dashboards |
+| 6 | [The Data Plane](./06-data-plane.md) | Infrastructure knowledge layer, resource graphs, context serialization |
+| 7 | [Change Control & GitOps](./07-change-control.md) | PR-based workflows, drift verification, validation loops |
+| 8 | [Policy & Guardrails](./08-policy-guardrails.md) | Tool restrictions, approval gates, autonomy tiers |
+| 9 | [Observability & Audit](./09-observability.md) | OpenTelemetry, action trails, debugging agent failures |
+| 10 | [Autonomous Operations & Notifications](./10-operations-notifications.md) | Scheduling, autonomous agents, notification routing, escalation chains |
 | 11 | [Session & State Management](./11-session-state.md) | Multi-turn conversations, persistence, session forking |
 | 12 | [Testing & Hardening](./12-testing-hardening.md) | Trajectory tests, prompt injection defense, security benchmarks |
 | 13 | [UX & Usability](./13-ux-usability.md) | Multi-tenancy, RBAC, onboarding, team collaboration, error prevention |
 | 14 | [Risk Framework & Checklists](./14-risk-framework.md) | Decision matrices, compliance mapping, go-live checklists |
-| 15 | [The Data Plane](./15-data-plane.md) | Infrastructure knowledge layer, resource graphs, context serialization |
 
 ---
 

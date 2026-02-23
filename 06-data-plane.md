@@ -1,4 +1,4 @@
-# Chapter 15: The Data Plane — Giving Agents Context
+# Chapter 6: The Data Plane — Giving Agents Context
 
 > Why `aws ec2 describe-instances` in a loop is the cloud equivalent of `grep` on 10,000 files — and how to build the infrastructure knowledge layer agents actually need.
 
@@ -781,7 +781,7 @@ FRESHNESS
 
 ## Next Chapter
 
-[Chapter 14: Risk Framework & Checklists →](./14-risk-framework.md)
+[Chapter 7: Change Control & GitOps →](./07-change-control.md)
 
 ---
 

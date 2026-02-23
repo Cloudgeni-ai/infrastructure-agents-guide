@@ -1,4 +1,4 @@
-# Chapter 7: Policy & Guardrails
+# Chapter 8: Policy & Guardrails
 
 > Tool restrictions, approval gates, autonomy tiers, and organizational policy enforcement.
 
@@ -269,4 +269,4 @@ class BudgetTracker {
 
 ## Next Chapter
 
-[Chapter 8: Observability & Audit →](./08-observability.md)
+[Chapter 9: Observability & Audit →](./09-observability.md)

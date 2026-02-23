@@ -247,7 +247,7 @@ Agent Worker
 
 ## Plane 5: Change Control
 
-Every agent action that modifies infrastructure goes through the same change pipeline as human changes. See [Chapter 6: Change Control & GitOps](./06-change-control.md).
+Every agent action that modifies infrastructure goes through the same change pipeline as human changes. See [Chapter 7: Change Control & GitOps](./07-change-control.md).
 
 ### The Golden Rule
 
@@ -264,7 +264,7 @@ Agent writes code → Agent applies directly to production
 
 ## Plane 6: Observability
 
-Agent actions must be at least as observable as human actions. In practice, they should be *more* observable because agent reasoning is opaque. See [Chapter 8: Observability](./08-observability.md).
+Agent actions must be at least as observable as human actions. In practice, they should be *more* observable because agent reasoning is opaque. See [Chapter 9: Observability](./09-observability.md).
 
 ### What to Observe
 

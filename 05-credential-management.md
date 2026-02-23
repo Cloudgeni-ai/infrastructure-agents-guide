@@ -304,4 +304,4 @@ const item = await response.json();
 
 ## Next Chapter
 
-[Chapter 6: Change Control & GitOps →](./06-change-control.md)
+[Chapter 6: The Data Plane →](./06-data-plane.md)

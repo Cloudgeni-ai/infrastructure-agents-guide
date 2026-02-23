@@ -1,4 +1,4 @@
-# Chapter 8: Observability & Audit
+# Chapter 9: Observability & Audit
 
 > OpenTelemetry, action trails, correlation IDs, and debugging agent failures.
 
@@ -331,4 +331,4 @@ function redactSensitive(text: string): string {
 
 ## Next Chapter
 
-[Chapter 9: Scheduled & Autonomous Operations →](./09-scheduled-autonomous.md)
+[Chapter 10: Autonomous Operations & Notifications →](./10-operations-notifications.md)

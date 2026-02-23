@@ -1,4 +1,4 @@
-# Chapter 6: Change Control & GitOps
+# Chapter 7: Change Control & GitOps
 
 > PR-based workflows, drift verification loops, and validation gates.
 
@@ -467,4 +467,4 @@ Encode safety rules directly into the agent's system prompt:
 
 ## Next Chapter
 
-[Chapter 7: Policy & Guardrails →](./07-policy-guardrails.md)
+[Chapter 8: Policy & Guardrails →](./08-policy-guardrails.md)

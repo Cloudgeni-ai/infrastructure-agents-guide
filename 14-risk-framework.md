@@ -10,14 +10,14 @@ Every risk in the report mapped to concrete mitigations covered in this guide:
 
 | Risk | Why Agents Amplify It | Infra Failure Example | Mitigations | Guide Chapter |
 |------|----------------------|----------------------|-------------|---------------|
-| **Prompt injection** | Language is the control channel; agents read untrusted content | Ticket injects "run terraform destroy" | Sandboxing, tool allow-lists, structured intent, approval gates | Ch 4, 7 |
-| **Over-privileged access** | Agents blur intent and execution; permissions default to broad | Agent with admin credentials deletes wrong resource | Least privilege, JIT credentials, scoped sandboxes, tool restrictions | Ch 5, 7 |
-| **Secret leakage** | Agents read configs/logs; frameworks serialize state | LLM output includes API keys; malware targets agent dirs | Short-lived tokens, redaction, vault-backed retrieval, no secrets in prompts | Ch 5, 8 |
-| **Hallucinated remediation** | Model fills gaps under uncertainty; tool calls make it real | Agent misdiagnoses root cause and applies wrong config | Pre-PR validation loops, plan verification, max iterations, HITL checkpoints | Ch 6, 7 |
-| **Cost/latency runaway** | Multi-step loops; long context; agent fan-out | Agent loops on logs, burns $10K in tokens, delays humans | Hard budgets (time, tokens, tools), stop conditions, queue depth limits | Ch 2, 7 |
-| **Poor observability** | Non-determinism; hidden reasoning; distributed tool calls | "Why did the agent create that PR?" can't be answered | Action trails, correlation IDs, OTel instrumentation, structured logs | Ch 8 |
+| **Prompt injection** | Language is the control channel; agents read untrusted content | Ticket injects "run terraform destroy" | Sandboxing, tool allow-lists, structured intent, approval gates | Ch 4, 8 |
+| **Over-privileged access** | Agents blur intent and execution; permissions default to broad | Agent with admin credentials deletes wrong resource | Least privilege, JIT credentials, scoped sandboxes, tool restrictions | Ch 5, 8 |
+| **Secret leakage** | Agents read configs/logs; frameworks serialize state | LLM output includes API keys; malware targets agent dirs | Short-lived tokens, redaction, vault-backed retrieval, no secrets in prompts | Ch 5, 9 |
+| **Hallucinated remediation** | Model fills gaps under uncertainty; tool calls make it real | Agent misdiagnoses root cause and applies wrong config | Pre-PR validation loops, plan verification, max iterations, HITL checkpoints | Ch 7, 8 |
+| **Cost/latency runaway** | Multi-step loops; long context; agent fan-out | Agent loops on logs, burns $10K in tokens, delays humans | Hard budgets (time, tokens, tools), stop conditions, queue depth limits | Ch 2, 8 |
+| **Poor observability** | Non-determinism; hidden reasoning; distributed tool calls | "Why did the agent create that PR?" can't be answered | Action trails, correlation IDs, OTel instrumentation, structured logs | Ch 9 |
 | **Malicious skills/plugins** | Skills = markdown + code; documentation becomes executable | Malicious skill exfiltrates credentials | Skill allow-lists, no third-party skills without review, provenance checks | Ch 3 |
-| **Silent failures** | Autonomous agents run without supervision | Drift scan fails for weeks, nobody notices | Notifications, daily digests, stuck run watchdog, escalation chains | Ch 9, 10 |
+| **Silent failures** | Autonomous agents run without supervision | Drift scan fails for weeks, nobody notices | Notifications, daily digests, stuck run watchdog, escalation chains | Ch 10 |
 
 ---
 
@@ -80,24 +80,24 @@ Tier 4 (PROD WITH GATES)
 
 | NIST AI RMF Function | What It Means | How This Guide Addresses It |
 |----------------------|---------------|---------------------------|
-| **GOVERN** | Establish AI risk governance | Autonomy tiers, policy engine, org-level policies (Ch 7) |
+| **GOVERN** | Establish AI risk governance | Autonomy tiers, policy engine, org-level policies (Ch 8) |
 | **MAP** | Understand AI risks in context | Risk matrix above, agent-specific threat modeling |
-| **MEASURE** | Assess and track risks | Observability, action trails, trajectory tests (Ch 8, 12) |
-| **MANAGE** | Treat and monitor risks | Guardrails, sandboxing, credential isolation, notifications (Ch 4-7, 10) |
+| **MEASURE** | Assess and track risks | Observability, action trails, trajectory tests (Ch 9, 12) |
+| **MANAGE** | Treat and monitor risks | Guardrails, sandboxing, credential isolation, notifications (Ch 4-8, 10) |
 
 ### OWASP LLM Top 10 Coverage
 
 | OWASP Risk | Relevant Chapters |
 |-----------|-------------------|
-| LLM01: Prompt Injection | Ch 4 (Sandbox), Ch 7 (Policy), Ch 12 (Testing) |
-| LLM02: Insecure Output Handling | Ch 6 (PR validation), Ch 8 (Redaction) |
+| LLM01: Prompt Injection | Ch 4 (Sandbox), Ch 8 (Policy), Ch 12 (Testing) |
+| LLM02: Insecure Output Handling | Ch 7 (PR validation), Ch 9 (Redaction) |
 | LLM03: Training Data Poisoning | Out of scope (use trusted LLM providers) |
-| LLM04: Model Denial of Service | Ch 7 (Budget limits), Ch 2 (Queue management) |
+| LLM04: Model Denial of Service | Ch 8 (Budget limits), Ch 2 (Queue management) |
 | LLM05: Supply Chain Vulnerabilities | Ch 3 (Skill system, no untrusted skills) |
-| LLM06: Sensitive Information Disclosure | Ch 5 (Credentials), Ch 8 (Redaction) |
+| LLM06: Sensitive Information Disclosure | Ch 5 (Credentials), Ch 9 (Redaction) |
 | LLM07: Insecure Plugin Design | Ch 3 (Skills as files, typed interfaces) |
-| LLM08: Excessive Agency | Ch 7 (Tool restrictions, autonomy tiers) |
-| LLM09: Overreliance | Ch 6 (Human review), Ch 7 (HITL checkpoints) |
+| LLM08: Excessive Agency | Ch 8 (Tool restrictions, autonomy tiers) |
+| LLM09: Overreliance | Ch 7 (Human review), Ch 8 (HITL checkpoints) |
 | LLM10: Model Theft | Out of scope (use hosted LLM APIs) |
 
 ### SOC 2 Considerations
@@ -105,9 +105,9 @@ Tier 4 (PROD WITH GATES)
 | SOC 2 Criteria | Agent-Relevant Control | Implementation |
 |---------------|----------------------|----------------|
 | CC6.1 - Logical access | Agent credential management | Short-lived tokens, scoped permissions (Ch 5) |
-| CC6.3 - Authorized access | Tool allow/deny lists | Policy engine, tier-based restrictions (Ch 7) |
-| CC7.2 - Monitoring | Agent activity monitoring | Action trails, dashboards, alerts (Ch 8, 10) |
-| CC8.1 - Change management | PR-based change control | Agent changes go through standard CI/CD (Ch 6) |
+| CC6.3 - Authorized access | Tool allow/deny lists | Policy engine, tier-based restrictions (Ch 8) |
+| CC7.2 - Monitoring | Agent activity monitoring | Action trails, dashboards, alerts (Ch 9, 10) |
+| CC8.1 - Change management | PR-based change control | Agent changes go through standard CI/CD (Ch 7) |
 
 ---
 
@@ -261,10 +261,6 @@ The six planes of an infrastructure agent system:
 6. **Observability** — how you see what happened (action trails, OTel, notifications)
 
 Get them wrong and you get the incidents from the report: malicious skills, credential theft, runaway costs, and enterprise bans.
-
-## Next Chapter
-
-[Chapter 15: The Data Plane →](./15-data-plane.md)
 
 ---
 
