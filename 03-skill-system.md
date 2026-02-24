@@ -14,176 +14,140 @@ The issues:
 - **No documentation** — the model guesses how tools work
 - **No isolation** — tools share the same process/permissions as the agent
 
-A better approach: **Skills as typed, documented, isolated capabilities**.
+---
+
+## What Makes a Good Skill System
+
+A skill system sits between the LLM and your infrastructure, providing capabilities that are:
+
+1. **Typed** — Inputs and outputs have schemas. The model can't pass arbitrary strings to shell commands.
+2. **Documented** — The agent understands what a skill does, when to use it, and what constraints apply — not just a function signature.
+3. **Scoped** — Different agents get different skills. A PR reviewer shouldn't have `terraform apply`.
+4. **Auditable** — Every skill invocation is logged with inputs, outputs, and context.
+5. **Isolated** — Skills can't access internals they shouldn't (database, other tenants' data, worker memory).
 
 ---
 
-## The Skills-as-Files Pattern
+## Approaches to Skill/Tool Registration
 
-Instead of registering tool handlers in code, write skills as files that the agent can read and execute:
+There are several ways to give agents capabilities. Each has tradeoffs:
+
+### 1. Skills as Files (Document-First)
+
+Write skills as files that the agent reads and executes. Popularized by Claude Code's `.claude/skills/` convention:
 
 ```
-.claude/skills/
+skills/
 ├── terraform-plan/
-│   ├── SKILL.md           # Instructions for the agent (documentation)
-│   └── client.ts          # Typed API client (executable code)
-├── drift-verification/
-│   ├── SKILL.md
-│   └── client.ts
+│   └── SKILL.md     # Instructions, constraints, examples
 ├── git-operations/
-│   ├── SKILL.md
-│   └── client.ts
+│   └── SKILL.md
 └── cloud-credentials/
-    ├── SKILL.md
-    └── client.ts
+    └── SKILL.md
 ```
 
-### Why this works
+The agent reads `SKILL.md` to understand when and how to use the skill. Instructions can include constraints ("never run on production without approval"), error handling ("if plan times out, retry once"), and examples.
 
-1. **Self-documenting** — The agent reads SKILL.md to understand what the skill does, when to use it, and what constraints apply
-2. **Typed execution** — client.ts provides a typed interface; the agent imports and calls functions
-3. **Isolated** — Skills run as subprocess scripts with no access to the worker's internals
-4. **Auditable** — Every skill file can be version-controlled and reviewed
-5. **Runtime-injectable** — Skills can be added/removed per agent, per organization, at dispatch time
-
-### Example: Terraform Plan Skill
-
-**SKILL.md**:
 ```markdown
 # Terraform Plan Skill
 
 ## When to Use
-Use this skill after making changes to Terraform files to validate
-your changes produce the expected plan output.
-
-## How It Works
-1. Call `triggerPlan(pipelineId)` to start a plan execution
-2. Poll `getPlanStatus(runId)` until the run completes
-3. Read the parsed output to verify:
-   - No unexpected resource deletions
-   - No drift remaining on target resources
-   - Plan succeeds without errors
+After making changes to Terraform files, to validate your changes
+produce the expected plan output.
 
 ## Constraints
-- NEVER call this on a pipeline you don't have permission for
 - ALWAYS check the plan output before creating a PR
 - If the plan shows unexpected changes, STOP and ask the user
 - Maximum 10 plan iterations per session
 
 ## Error Handling
 - If the pipeline fails, check the error output for syntax errors
-- If the pipeline times out, wait 60 seconds and retry once
 - If authentication fails, request fresh credentials
 ```
 
-**client.ts**:
-```typescript
-const INTERNAL_API = 'http://localhost:3000';
+**Pros**: Rich documentation; agent can reason about when to use a skill; easy to version-control and review; skills can be injected per-agent at runtime.
+**Cons**: Requires the agent to parse and follow instructions (model-dependent); less structured than typed function calls.
 
-interface PlanResult {
-  runId: string;
-  status: 'success' | 'failure' | 'timeout';
-  driftResources: Array<{
-    address: string;
-    resourceId: string;
-    changeType: 'create' | 'update' | 'delete' | 'no-op';
-  }>;
-  allResources: Array<{ address: string; resourceId: string }>;
-  rawOutput?: string;
-  error?: string;
-}
+### 2. MCP (Model Context Protocol)
 
-export async function triggerPlan(pipelineId: string): Promise<{ runId: string }> {
-  const res = await fetch(`${INTERNAL_API}/run-iac-pipeline`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pipelineId, type: 'PLAN' }),
-  });
-  return res.json();
-}
-
-export async function getPlanStatus(runId: string): Promise<PlanResult> {
-  const res = await fetch(`${INTERNAL_API}/get-iac-pipeline-status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ runId }),
-  });
-  return res.json();
-}
-```
-
----
-
-## Internal Server: The Capability Bridge
-
-Skills can't access the database, cloud APIs, or worker internals directly. They communicate through a local HTTP server running inside the worker:
-
-```mermaid
-graph LR
-    subgraph "Agent Worker Process"
-        AGENT[LLM Agent] -->|import & call| SKILL[Skill Script<br/>subprocess]
-        SKILL -->|HTTP fetch| INTERNAL[Internal Server<br/>localhost:3000]
-        INTERNAL -->|RPC| API[API Server]
-    end
-
-    subgraph "External"
-        API --> DB[(Database)]
-        API --> CLOUD[Cloud APIs]
-        API --> CICD[CI/CD]
-    end
-```
+Anthropic's open standard for connecting agents to external tools and data sources. Tools are registered as typed functions served over stdio or HTTP:
 
 ```typescript
-// Internal server — runs inside the worker process
-import { serve } from 'bun'; // or express, fastify, etc.
+import { McpServer } from '@modelcontextprotocol/sdk/server';
 
-const server = serve({
-  port: 3000,
-  async fetch(req) {
-    const url = new URL(req.url);
+const server = new McpServer({ name: 'infra-tools' });
 
-    switch (url.pathname) {
-      case '/run-iac-pipeline':
-        return handleRunPipeline(req);
-      case '/get-cloud-credentials':
-        return handleGetCredentials(req);
-      case '/create-pull-request':
-        return handleCreatePR(req);
-      case '/ask-user':
-        return handleAskUser(req);
-      default:
-        return new Response('Not found', { status: 404 });
-    }
-  },
-});
-
-async function handleGetCredentials(req: Request): Response {
-  const { integrationId, scope } = await req.json();
-
-  // Validate the request against the current task context
-  if (!isAllowedIntegration(integrationId)) {
-    return Response.json({ error: 'Integration not authorized' }, { status: 403 });
+server.tool('terraform_plan',
+  { pipelineId: z.string() },
+  async ({ pipelineId }) => {
+    const result = await triggerPlan(pipelineId);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
-
-  // RPC to API server — which generates short-lived tokens
-  const token = await rpcCall('generateCloudToken', {
-    integrationId,
-    organizationId: currentContext.organizationId,
-    scope,
-  });
-
-  return Response.json({ token, expiresIn: 3600 });
-}
+);
 ```
 
-### Why Not Direct MCP/Tool Registration?
+**Pros**: Standard protocol; typed schemas; supported by multiple LLM providers; growing ecosystem of pre-built servers.
+**Cons**: Less room for rich documentation; tool descriptions are typically one-liners.
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Skills as files** (recommended) | Agent can read docs; typed clients; easy to add/remove per context; version-controlled | Slightly more setup; requires internal server |
-| **MCP tool registration** | Standard protocol; some LLMs support natively | Less documentation; harder to scope per-agent; tight coupling |
-| **Direct function calls** | Simplest; no HTTP overhead | No isolation; hard to audit; agent can call anything |
-| **OpenAI-style function calling** | Model generates structured args; you validate | Schema-only docs; no rich documentation; tied to one provider |
+### 3. LangChain / LangGraph Tools
+
+Python-native tool registration with decorators:
+
+```python
+from langchain.tools import tool
+
+@tool
+def terraform_plan(pipeline_id: str) -> str:
+    """Trigger a Terraform plan and return the result."""
+    result = requests.post(f"{API_URL}/run-pipeline", json={"id": pipeline_id})
+    return result.json()
+
+agent = create_react_agent(llm, [terraform_plan, ...])
+```
+
+**Pros**: Simple Python-native API; large ecosystem; works with any LLM.
+**Cons**: Python-only; tool docs limited to docstrings; no built-in isolation.
+
+### 4. OpenAI-Style Function Calling
+
+Define tools as JSON schemas, let the model generate structured arguments:
+
+```typescript
+const tools = [{
+  type: 'function',
+  function: {
+    name: 'terraform_plan',
+    description: 'Trigger a Terraform plan execution',
+    parameters: {
+      type: 'object',
+      properties: {
+        pipeline_id: { type: 'string', description: 'The pipeline to run' },
+      },
+      required: ['pipeline_id'],
+    },
+  },
+}];
+```
+
+**Pros**: Model generates validated JSON; clean separation between schema and execution.
+**Cons**: Schema-only documentation (no rich instructions); tied to providers that support function calling.
+
+### Comparison
+
+| Approach | Documentation | Typing | Isolation | Ecosystem |
+|----------|--------------|--------|-----------|-----------|
+| **Skills as files** | Rich (full markdown) | Via code | Per-file | Growing (Claude, community) |
+| **MCP** | Schema + description | Strong (Zod) | Per-server | Growing fast (vendor-backed) |
+| **LangChain tools** | Docstrings | Python types | None (same process) | Largest |
+| **Function calling** | Schema only | JSON Schema | Your responsibility | Universal |
+
+### Combining Approaches: Skills + MCP
+
+Skills and MCP serve different roles: **skills define best practices and workflows; MCP connects to live data and tool APIs.** They compose well together.
+
+A skill's `SKILL.md` might say "when writing Terraform, follow these conventions, use these module patterns, validate with plan" — providing the *how*. An MCP server wired into the same agent provides live access to the Terraform Registry, workspace state, and module documentation — providing the *data*.
+
+HashiCorp's Claude plugin demonstrates this: it bundles skills for Terraform code generation alongside a Docker-run MCP server that gives the agent live access to the Terraform Registry and Terraform Cloud APIs.
 
 ---
 
@@ -227,6 +191,35 @@ async function handleGetCredentials(req: Request): Response {
 
 ---
 
+## Tool Allow/Deny Lists
+
+Restrict what tools each agent type can access:
+
+```typescript
+// Example agent configurations
+const AGENT_CONFIGS = {
+  'pr-reviewer': {
+    allowedTools: ['git-diff', 'pr-comment', 'iac-lint'],
+    maxTurns: 20,
+    producesCodeChanges: false,
+  },
+  'compliance-remediation': {
+    allowedTools: [],  // All tools (needs to write code, run plans, create PRs)
+    maxTurns: 50,
+    producesCodeChanges: true,
+  },
+  'drift-detection': {
+    allowedTools: ['terraform-plan', 'drift-verification', 'notify-slack'],
+    maxTurns: 10,
+    producesCodeChanges: false,
+  },
+};
+```
+
+The key principle: **start restrictive, expand as needed.** A drift detection agent doesn't need git push. A PR reviewer doesn't need cloud credentials.
+
+---
+
 ## Real-World IaC Skills Ecosystem
 
 Vendors, cloud providers, and the community have published production-grade skills and MCP servers. You can adopt them directly, use them as templates, or just study the patterns.
@@ -254,27 +247,6 @@ Follow these conventions...
 ```
 
 The agent loads full instructions only when a skill is activated — names and descriptions stay in context for discovery.
-
-### Skills + MCP Together
-
-Skills and MCP serve different roles: **skills define best practices and workflows; MCP connects to live data and tool APIs.** They compose well together.
-
-```
-┌──────────────────────────────────────────────────────┐
-│  SKILL.md                                            │
-│  "When writing Terraform, follow these conventions,  │
-│   use these module patterns, validate with plan..."  │
-│                                                      │
-│  ┌────────────────────────────────────────────────┐  │
-│  │  MCP Server (wired via plugin.json)            │  │
-│  │  - Query Terraform Registry for providers      │  │
-│  │  - Read workspace state from Terraform Cloud   │  │
-│  │  - Search module documentation                 │  │
-│  └────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────┘
-```
-
-HashiCorp's Claude plugin demonstrates this: it bundles skills for Terraform code generation alongside a Docker-run MCP server that gives the agent live access to the Terraform Registry and Terraform Cloud APIs.
 
 ### Vendor-Official Skills
 
@@ -418,159 +390,6 @@ For IaC skills, the safe adoption posture is:
 4. **For apply/destroy**: Require explicit "break-glass" approval with separate credentials
 
 This matches how the vendor skills are designed: HashiCorp's skills produce guidance and encourage plan verification; Pulumi's migration skills mandate "zero-diff preview" before considering success.
-
----
-
-## Skill Hydration: Loading Skills at Runtime
-
-Before the agent starts, the worker writes skill files to the working directory based on the agent's configuration:
-
-```typescript
-interface SkillDefinition {
-  name: string;
-  markdown: string;    // SKILL.md content
-  clientCode: string;  // client.ts content
-  category: 'iac' | 'git' | 'cloud' | 'communication';
-}
-
-async function hydrateSkills(
-  workDir: string,
-  agentConfig: AgentConfig,
-  orgPolicies: PolicyDigest
-): Promise<number> {
-  const skillsDir = path.join(workDir, '.claude', 'skills');
-  await fs.mkdir(skillsDir, { recursive: true });
-
-  let count = 0;
-
-  for (const skill of getSkillsForAgent(agentConfig)) {
-    // Check if agent is allowed to use this skill
-    if (agentConfig.allowedTools.length > 0 &&
-        !agentConfig.allowedTools.includes(skill.name)) {
-      continue;
-    }
-
-    const skillDir = path.join(skillsDir, skill.name);
-    await fs.mkdir(skillDir, { recursive: true });
-
-    // Inject policy constraints into the SKILL.md
-    const enrichedMarkdown = injectPolicyConstraints(
-      skill.markdown,
-      orgPolicies
-    );
-
-    await fs.writeFile(path.join(skillDir, 'SKILL.md'), enrichedMarkdown);
-    await fs.writeFile(path.join(skillDir, 'client.ts'), skill.clientCode);
-    count++;
-  }
-
-  return count;
-}
-```
-
----
-
-## Tool Allow/Deny Lists
-
-Restrict what tools each agent type can access:
-
-```typescript
-// Agent configuration — stored in database
-interface AgentConfig {
-  slug: string;                 // 'infrastructure', 'pr-reviewer', etc.
-  allowedTools: string[];       // Empty = all allowed
-  maxTurns: number;             // Iteration limit (e.g., 50)
-  producesCodeChanges: boolean; // Whether this agent modifies files
-  requiresRepository: boolean;  // Whether git context is needed
-}
-
-// Example configurations
-const AGENT_CONFIGS = {
-  'pr-reviewer': {
-    allowedTools: ['git-diff', 'pr-comment', 'iac-lint'],  // Read-only + comment
-    maxTurns: 20,
-    producesCodeChanges: false,
-    requiresRepository: true,
-  },
-  'compliance-remediation': {
-    allowedTools: [],  // All tools (needs to write code, run plans, create PRs)
-    maxTurns: 50,
-    producesCodeChanges: true,
-    requiresRepository: true,
-  },
-  'drift-detection': {
-    allowedTools: ['terraform-plan', 'drift-verification', 'notify-slack'],
-    maxTurns: 10,
-    producesCodeChanges: false,
-    requiresRepository: true,
-  },
-};
-```
-
----
-
-## Alternatives for Skill/Tool Systems
-
-### LangChain Tools
-
-```python
-from langchain.tools import tool
-
-@tool
-def terraform_plan(pipeline_id: str) -> str:
-    """Trigger a Terraform plan and return the result."""
-    result = requests.post(f"{API_URL}/run-pipeline", json={"id": pipeline_id})
-    return result.json()
-
-# Register with agent
-agent = create_react_agent(llm, [terraform_plan, ...])
-```
-
-### OpenAI Function Calling
-
-```typescript
-const tools = [{
-  type: 'function',
-  function: {
-    name: 'terraform_plan',
-    description: 'Trigger a Terraform plan execution',
-    parameters: {
-      type: 'object',
-      properties: {
-        pipeline_id: { type: 'string', description: 'The pipeline to run' },
-      },
-      required: ['pipeline_id'],
-    },
-  },
-}];
-
-// Agent loop
-const response = await openai.chat.completions.create({
-  model: 'gpt-4',
-  messages,
-  tools,
-});
-
-if (response.choices[0].message.tool_calls) {
-  for (const call of response.choices[0].message.tool_calls) {
-    const result = await executeToolCall(call);
-    messages.push({ role: 'tool', content: result, tool_call_id: call.id });
-  }
-}
-```
-
-### MCP (Model Context Protocol)
-
-```typescript
-import { McpServer } from '@modelcontextprotocol/sdk/server';
-
-const server = new McpServer({ name: 'infra-tools' });
-
-server.tool('terraform_plan', { pipelineId: z.string() }, async ({ pipelineId }) => {
-  const result = await triggerPlan(pipelineId);
-  return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-});
-```
 
 ---
 
