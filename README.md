@@ -54,36 +54,32 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 ## Quick Start: Mental Model
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    YOUR INFRASTRUCTURE                       │
-│  AWS / Azure / GCP / OCI    Terraform / Bicep / Pulumi      │
-│  GitHub / GitLab / ADO      Prowler / Checkov / Custom      │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │   POLICY PLANE      │  ← What agents CAN do
-                    │  (rules, approvals) │
-                    └──────────┬──────────┘
-                               │
-              ┌────────────────▼────────────────┐
-              │       AGENT RUNTIME             │
-              │  ┌─────────┐  ┌──────────────┐  │
-              │  │  Skills  │  │  Tool Access  │ │  ← How agents DO it
-              │  └─────────┘  └──────────────┘  │
-              │  ┌─────────┐  ┌──────────────┐  │
-              │  │ Session  │  │  Credentials  │ │
-              │  └─────────┘  └──────────────┘  │
-              └────────────────┬────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │  CHANGE CONTROL     │  ← How changes LAND
-                    │  (PRs, validation)  │
-                    └──────────┬──────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │  OBSERVABILITY      │  ← How you SEE it
-                    │  (traces, alerts)   │
-                    └─────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                    YOUR INFRASTRUCTURE                    │
+│  AWS / Azure / GCP / OCI    Terraform / Bicep / Pulumi   │
+│  GitHub / GitLab / ADO      Prowler / Checkov / Custom   │
+└────────────────────────────┬──────────────────────────────┘
+                             │
+                  ┌──────────▼──────────┐
+                  │    POLICY PLANE     │  ← What agents CAN do
+                  │  (rules, approvals) │
+                  └──────────┬──────────┘
+                             │
+            ┌────────────────▼────────────────┐
+            │          AGENT RUNTIME          │
+            │  Skills · Tool Access · Session │  ← How agents DO it
+            │  Credentials · Sandboxing       │
+            └────────────────┬────────────────┘
+                             │
+                  ┌──────────▼──────────┐
+                  │   CHANGE CONTROL    │  ← How changes LAND
+                  │  (PRs, validation)  │
+                  └──────────┬──────────┘
+                             │
+                  ┌──────────▼──────────┐
+                  │    OBSERVABILITY    │  ← How you SEE it
+                  │  (traces, alerts)   │
+                  └─────────────────────┘
 ```
 
 ---
