@@ -331,4 +331,4 @@ function redactSensitive(text: string): string {
 
 ## Next Chapter
 
-[Chapter 10: Autonomous Operations & Notifications →](./10-operations-notifications.md)
+[Chapter 10: Autonomous Operations & Notifications →](./10-autonomy-notifications.md)

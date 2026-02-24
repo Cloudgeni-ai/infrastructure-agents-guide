@@ -34,7 +34,7 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 | 7 | [Change Control & GitOps](./07-change-control.md) | PR-based workflows, drift verification, validation loops |
 | 8 | [Policy & Guardrails](./08-policy-guardrails.md) | Tool restrictions, approval gates, autonomy tiers |
 | 9 | [Observability & Audit](./09-observability.md) | OpenTelemetry, action trails, debugging agent failures |
-| 10 | [Autonomous Operations & Notifications](./10-operations-notifications.md) | Scheduling, autonomous agents, notification routing, escalation chains |
+| 10 | [Autonomous Operations & Notifications](./10-autonomy-notifications.md) | Scheduling, autonomous agents, notification routing, escalation chains |
 | 11 | [Testing & Hardening](./11-testing-hardening.md) | Trajectory tests, prompt injection defense, security benchmarks |
 | 12 | [UX & Usability](./12-ux-usability.md) | Multi-tenancy, RBAC, onboarding, team collaboration, error prevention |
 | 13 | [Risk Framework & Checklists](./13-risk-framework.md) | Decision matrices, compliance mapping, go-live checklists |
