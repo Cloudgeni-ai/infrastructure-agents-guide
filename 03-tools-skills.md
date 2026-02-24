@@ -222,46 +222,6 @@ HashiCorp's Claude plugin demonstrates all three: CLI tools installed in the env
 
 ---
 
-## Skill Categories for Infrastructure Agents
-
-### IaC Lifecycle Skills
-
-| Skill | Purpose | Risk Level |
-|-------|---------|------------|
-| `terraform-plan` | Trigger and read plan output | Low (read-only) |
-| `terraform-validate` | Syntax/config validation | Low |
-| `bicep-what-if` | Azure deployment preview | Low (read-only) |
-| `iac-lint` | Static analysis (tflint, checkov) | Low |
-| `drift-verification` | Compare state vs. code | Low (read-only) |
-
-### Git & PR Skills
-
-| Skill | Purpose | Risk Level |
-|-------|---------|------------|
-| `git-branch` | Create/switch branches | Low |
-| `git-commit` | Stage and commit changes | Medium |
-| `git-push` | Push to remote | Medium |
-| `create-pr` | Open a pull request | Medium |
-| `pr-comment` | Post review comments | Low |
-
-### Cloud Interaction Skills
-
-| Skill | Purpose | Risk Level |
-|-------|---------|------------|
-| `cloud-credentials` | Request short-lived tokens | High (gated) |
-| `resource-describe` | Read cloud resource state | Low |
-| `resource-import` | Import into Terraform state | High (gated) |
-
-### Communication Skills
-
-| Skill | Purpose | Risk Level |
-|-------|---------|------------|
-| `ask-user` | Pause for human input | Low |
-| `notify-slack` | Post status to Slack | Low |
-| `create-ticket` | Open a Jira/Linear issue | Low |
-
----
-
 ## Tool Allow/Deny Lists
 
 Restrict what tools each agent type can access:
