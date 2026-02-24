@@ -13,32 +13,32 @@ Policy determines what the agent is actually allowed to do. The LLM decides *wha
 ## Three Layers of Guardrails
 
 ```
-┌──────────────────────────────────────────────────┐
-│  Layer 1: STRUCTURAL GUARDRAILS                  │
-│  Built into the architecture. Cannot be bypassed.│
-│  • Workers can't access DB                       │
-│  • Sandbox containers have network restrictions  │
-│  • Credential broker validates every request     │
-│  • Max iteration limits enforced in code         │
-└──────────────────┬───────────────────────────────┘
-                   │
-┌──────────────────▼───────────────────────────────┐
-│  Layer 2: PROMPT-LEVEL RULES                     │
-│  Encoded in system prompts. Model-enforced.      │
-│  • "Never push to main"                         │
-│  • "Always validate before PR"                   │
-│  • "Max 10 drift iterations"                     │
-│  • Organization-specific policies                │
-└──────────────────┬───────────────────────────────┘
-                   │
-┌──────────────────▼───────────────────────────────┐
-│  Layer 3: RUNTIME POLICY ENGINE                  │
-│  Evaluated at dispatch and tool-call time.       │
-│  • Tool allow/deny lists                         │
-│  • Autonomy tier enforcement                     │
-│  • Human approval requirements                   │
-│  • Budget/rate limits                            │
-└──────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────┐
+│  Layer 1: STRUCTURAL GUARDRAILS                    │
+│  Built into architecture. Cannot be bypassed.      │
+│  • Workers can't access DB                         │
+│  • Sandbox containers have network restrictions    │
+│  • Credential broker validates every request       │
+│  • Max iteration limits enforced in code           │
+└───────────────────────┬────────────────────────────┘
+                        │
+┌───────────────────────▼────────────────────────────┐
+│  Layer 2: PROMPT-LEVEL RULES                       │
+│  Encoded in system prompts. Model-enforced.        │
+│  • "Never push to main"                            │
+│  • "Always validate before PR"                     │
+│  • "Max 10 drift iterations"                       │
+│  • Organization-specific policies                  │
+└───────────────────────┬────────────────────────────┘
+                        │
+┌───────────────────────▼────────────────────────────┐
+│  Layer 3: RUNTIME POLICY ENGINE                    │
+│  Evaluated at dispatch and tool-call time.         │
+│  • Tool allow/deny lists                           │
+│  • Autonomy tier enforcement                       │
+│  • Human approval requirements                     │
+│  • Budget/rate limits                              │
+└────────────────────────────────────────────────────┘
 ```
 
 Layer 2 (prompt rules) is the weakest — models can be manipulated. Layers 1 and 3 must catch what Layer 2 misses.

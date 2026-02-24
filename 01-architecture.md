@@ -108,17 +108,17 @@ The policy plane gates every action before execution. It decides what agents are
 Not all actions carry equal risk. Define tiers and bind each to explicit permissions:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Tier 0: OBSERVE           Read-only. Summarize, analyze.   │
-│  ─────────────────────────────────────────────────────────  │
-│  Tier 1: RECOMMEND         Suggest changes. No execution.   │
-│  ─────────────────────────────────────────────────────────  │
-│  Tier 2: DRAFT             Create PRs. No merge/apply.      │
-│  ─────────────────────────────────────────────────────────  │
-│  Tier 3: SANDBOX EXECUTE   Run in isolated environment.     │
-│  ─────────────────────────────────────────────────────────  │
-│  Tier 4: PROD WITH GATES   Execute in prod with approvals.  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Tier 0: OBSERVE           Read-only. Summarize, analyze.    │
+│  ──────────────────────────────────────────────────────────  │
+│  Tier 1: RECOMMEND         Suggest changes. No execution.    │
+│  ──────────────────────────────────────────────────────────  │
+│  Tier 2: DRAFT             Create PRs. No merge/apply.       │
+│  ──────────────────────────────────────────────────────────  │
+│  Tier 3: SANDBOX EXECUTE   Run in isolated environment.      │
+│  ──────────────────────────────────────────────────────────  │
+│  Tier 4: PROD WITH GATES   Execute in prod with approvals.   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Policy Engine Pattern

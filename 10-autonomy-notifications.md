@@ -9,18 +9,10 @@
 Interactive chat gets the demos. But the most consistent value comes from **fully autonomous** agents — running on a schedule, detecting problems, fixing them, and reporting results without any human initiating the conversation.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                AUTONOMOUS AGENT LIFECYCLE                    │
-│                                                             │
-│   Schedule triggers    Agent detects     Agent remediates   │
-│   ┌─────┐             ┌─────────┐       ┌──────────┐       │
-│   │Cron │──→ Scan ──→ │ Finding │──→ ──→│ Fix + PR │       │
-│   └─────┘             └─────────┘       └──────────┘       │
-│       │                    │                  │             │
-│       ▼                    ▼                  ▼             │
-│   Next scheduled      Notification       Notification      │
-│   run                 to team            to team            │
-└─────────────────────────────────────────────────────────────┘
+Schedule --> Scan --> Finding detected? --> Auto-remediate --> PR created
+   |                       |                                     |
+   v                       v                                     v
+Next scheduled run    Notify team                           Notify team
 ```
 
 ---

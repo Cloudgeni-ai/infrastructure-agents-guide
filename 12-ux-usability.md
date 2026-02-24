@@ -37,22 +37,22 @@ The organization is the **top-level isolation boundary**. Everything — credent
 - An admin for Org X **cannot** escalate to Org Y, even if they're the same person
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Organization: "Acme Platform Team"                       │
-│                                                           │
-│  Cloud accounts: AWS Prod, AWS Staging, Azure Dev         │
-│  Repositories:   infra-core, app-deploy, data-pipelines   │
-│  Agents:         remediation, drift, PR review, devops    │
-│  Policies:       "encrypt all S3", "tag everything"       │
+┌────────────────────────────────────────────────────────────┐
+│  Organization: "Acme Platform Team"                        │
+│                                                            │
+│  Cloud accounts: AWS Prod, AWS Staging, Azure Dev          │
+│  Repositories:   infra-core, app-deploy, data-pipelines    │
+│  Agents:         remediation, drift, PR review, devops     │
+│  Policies:       "encrypt all S3", "tag everything"        │
 │  Members:        alice (admin), bob (member), carol        │
-└──────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────┘
 
   ← No data crosses this boundary →
 
-┌──────────────────────────────────────────────────────────┐
-│  Organization: "Acme App Team"                            │
-│  (Separate credentials, repos, agents, policies)          │
-└──────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│  Organization: "Acme App Team"                             │
+│  (Separate credentials, repos, agents, policies)           │
+└────────────────────────────────────────────────────────────┘
 ```
 
 The key implementation rule: **every database query must include the organization filter**. Enforce this with middleware that validates org membership before any handler runs. Cross-org access should return 403, not 404 — don't leak existence.
@@ -93,21 +93,16 @@ The key insight: **don't rely on roles to prevent mistakes. Structure the system
 Don't present a wizard. Start with exactly two things:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    GET STARTED                                │
-│                                                              │
-│  You need two things to start using infrastructure agents:   │
-│                                                              │
-│  ┌─────────────────────┐   ┌─────────────────────────┐      │
-│  │  1. CONNECT CLOUD   │   │  2. CONNECT GIT REPO    │      │
-│  │     AWS / Azure /   │   │     GitHub / GitLab /   │      │
-│  │     GCP / OCI       │   │     Azure DevOps        │      │
-│  │  [Quick Connect]    │   │  [Connect Provider]     │      │
-│  └─────────────────────┘   └─────────────────────────┘      │
-│                                                              │
-│  After these, agents can analyze your infrastructure         │
-│  and start creating PRs.                                     │
-└─────────────────────────────────────────────────────────────┘
+GET STARTED
+You need two things to start using infrastructure agents:
+
+  1. CONNECT CLOUD            2. CONNECT GIT REPO
+     AWS / Azure /               GitHub / GitLab /
+     GCP / OCI                   Azure DevOps
+     [Quick Connect]             [Connect Provider]
+
+After these, agents can analyze your infrastructure
+and start creating PRs.
 ```
 
 Everything else is progressive — shown only after the mandatory steps are complete.
@@ -143,15 +138,13 @@ Show onboarding progress persistently until mandatory steps are complete, then h
 The primary interface should feel like a conversation, not a CI/CD dashboard. Three selectors provide the context an agent needs:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  [Agent: DevOps ▼]  [Repo: infra-core ▼]  [Cloud: AWS ▼]   │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Fix the S3 bucket encryption finding for            │    │
-│  │  my-data-bucket                                      │    │
-│  │                                        [Send →]      │    │
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
+[Agent: DevOps ▼]  [Repo: infra-core ▼]  [Cloud: AWS ▼]
+
+┌─────────────────────────────────────────────────────┐
+│  Fix the S3 bucket encryption finding for           │
+│  my-data-bucket                                     │
+│                                          [Send ->]  │
+└─────────────────────────────────────────────────────┘
 ```
 
 **Why this works**: Members don't need to know about credentials, pipelines, or agent configurations. The admin has already set up the integrations. The member just picks from dropdowns and asks a question.
