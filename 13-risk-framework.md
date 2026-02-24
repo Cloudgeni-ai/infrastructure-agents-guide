@@ -121,7 +121,7 @@ INFRASTRUCTURE
 [ ] Worker deployment pipeline established
 [ ] Sandbox containers built with IaC tools pre-installed
 [ ] Metadata endpoint blocked in sandbox networking
-[ ] Internal server (capability bridge) running
+[ ] Credential broker and tool access layer running
 
 SECURITY
 [ ] Credential broker implemented and tested
@@ -141,7 +141,7 @@ OBSERVABILITY
 ```
 AGENT CONFIGURATION
 [ ] System prompt with hard rules defined
-[ ] Skill files written (SKILL.md + client.ts)
+[ ] Skills/tools defined and tested
 [ ] Tool allow/deny list configured
 [ ] Max iteration and budget limits set
 
@@ -173,8 +173,8 @@ NOTIFICATIONS
 [ ] Daily digest scheduled
 
 MONITORING
-[ ] Stuck run watchdog active
-[ ] PEL recovery on worker startup
+[ ] Stuck/stalled task detection active
+[ ] Unacknowledged message recovery on worker startup
 [ ] Alert on agent failure rate > threshold
 [ ] Alert on queue depth > threshold
 [ ] Alert on token usage anomalies
@@ -189,9 +189,9 @@ MULTI-AGENT
 [ ] Concurrent session handling tested under load
 
 SESSION MANAGEMENT
-[ ] Session persistence working (git bundles + session files)
+[ ] Session persistence working (git bundles + session state)
 [ ] Session resume after worker restart tested
-[ ] Follow-up messages (WAITING_INPUT) flow tested
+[ ] Human-in-the-loop input flow tested end-to-end
 [ ] Message queuing for busy agents
 
 GOVERNANCE

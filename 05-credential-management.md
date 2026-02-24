@@ -162,17 +162,24 @@ async function generateGcpToken(
 
 ---
 
-## The Credential Broker (Internal Server)
+## The Credential Broker
 
-The credential broker runs inside the worker and validates every credential request:
+The credential broker sits between the agent sandbox and your secret store. It validates every credential request against the current task's authorization context before issuing a short-lived token.
+
+Key responsibilities:
+1. **Validate ownership** — confirm the requested cloud integration belongs to this organization and is authorized for this task
+2. **Enforce scope limits** — check that the requested permissions don't exceed policy limits
+3. **Generate short-lived tokens** — exchange long-lived credentials (in the vault) for short-lived tokens (given to the agent)
+4. **Audit every issuance** — log which agent, which session, which scope, and when the token expires
 
 ```typescript
+// Example credential broker handler
 async function handleGetCredentials(req: Request): Promise<Response> {
   const { integrationId, scope } = await req.json();
-  const context = getCurrentTaskContext();
+  const taskContext = getTaskContext(); // From the current execution context
 
   // 1. Validate integration belongs to this organization
-  if (!context.authorizedIntegrations.includes(integrationId)) {
+  if (!taskContext.authorizedIntegrations.includes(integrationId)) {
     return Response.json(
       { error: 'Integration not authorized for this task' },
       { status: 403 }
@@ -180,19 +187,19 @@ async function handleGetCredentials(req: Request): Promise<Response> {
   }
 
   // 2. Validate scope is within allowed limits
-  if (scope && !isAllowedScope(scope, context.policy)) {
+  if (scope && !isAllowedScope(scope, taskContext.policy)) {
     return Response.json(
       { error: `Scope '${scope}' exceeds policy limits` },
       { status: 403 }
     );
   }
 
-  // 3. Request short-lived token via RPC to API server
-  const token = await rpcToApiServer('generateCloudToken', {
+  // 3. Request short-lived token from the API server / vault
+  const token = await requestCloudToken({
     integrationId,
-    organizationId: context.organizationId,
+    organizationId: taskContext.organizationId,
     scope,
-    requestedBy: `agent:${context.agentSlug}:${context.sessionId}`,
+    requestedBy: taskContext.agentId,
   });
 
   // 4. Log the credential issuance for audit
@@ -200,8 +207,7 @@ async function handleGetCredentials(req: Request): Promise<Response> {
     type: 'credential_issued',
     integrationId,
     scope,
-    agentSlug: context.agentSlug,
-    sessionId: context.sessionId,
+    agentId: taskContext.agentId,
     expiresAt: token.expiresAt,
   });
 
@@ -227,7 +233,7 @@ const vault = Vault({
 await vault.write('secret/data/integrations/aws-prod', {
   data: {
     roleArn: 'arn:aws:iam::123456789:role/agent-role',
-    externalId: 'cloudgeni-agent',
+    externalId: 'infra-agent-platform',
   },
 });
 

@@ -318,8 +318,6 @@ Fixes compliance finding: S3 bucket `my-bucket` missing server-side encryption.
 - Framework: CIS AWS Benchmark v3.0
 - Control: 2.1.1 - Ensure S3 bucket has server-side encryption enabled
 
----
-Agent Session: abc-123-def-456
 ```
 
 ---
@@ -428,19 +426,18 @@ stacks:
 
 ## Branch Naming Conventions
 
-Keep agent branches identifiable and organized:
+Keep agent branches identifiable and organized. A common pattern:
 
-```typescript
-function generateBranchName(context: AgentContext): string {
-  const parts = [
-    'agent',                        // Prefix: identifies agent-created branches
-    context.agentSlug,              // Which agent
-    context.findingId || context.taskId,  // What it's fixing
-    Date.now().toString(36),        // Uniqueness
-  ];
-  return parts.join('/');
-  // Example: agent/compliance-remediation/finding-abc123/m4k7x2
-}
+```
+agent/{agent-type}/{task-reference}/{unique-suffix}
+```
+
+Examples:
+- `agent/remediation/finding-abc123/m4k7x2`
+- `agent/drift-fix/vpc-encryption/a9b3c1`
+- `agent/pr-review/issue-456/x2y4z6`
+
+The `agent/` prefix makes it easy to filter agent-created branches in CI rules, branch protection, and cleanup scripts. The unique suffix prevents collisions when agents work on the same finding concurrently.
 ```
 
 ---

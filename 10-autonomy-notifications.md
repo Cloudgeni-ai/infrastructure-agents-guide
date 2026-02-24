@@ -50,31 +50,7 @@ spec:
           restartPolicy: OnFailure
 ```
 
-```typescript
-// API endpoint: receive scheduled trigger
-app.post('/api/v1/internal/scheduled-tasks/drift-scan', async (req, res) => {
-  if (!isValidSchedulerToken(req.headers.authorization)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const driftConfigs = await db.configDrift.findMany({
-    where: {
-      isActive: true,
-      frequency: { not: 'UNMONITORED' },
-      nextScanAt: { lte: new Date() },
-    },
-    include: { repository: true, pipeline: true },
-  });
-
-  const tasks = await Promise.all(
-    driftConfigs.map(config => dispatchDriftScan(config))
-  );
-
-  res.json({ dispatched: tasks.length });
-});
-```
-
-The pattern is the same regardless of scheduler: an external trigger hits an authenticated API endpoint, which queries what needs scanning and dispatches tasks.
+The pattern is the same regardless of scheduler: an external trigger hits an authenticated API endpoint, which queries what needs scanning (based on configured frequency and last scan time) and dispatches tasks to the agent queue.
 
 ### Scheduling Comparison
 
@@ -87,27 +63,19 @@ The pattern is the same regardless of scheduler: an external trigger hits an aut
 | **In-process (croner/cron)** | Medium | Lowest | Manual | Free | Simple setups |
 | **pg_cron (PostgreSQL)** | High | Low | Manual | Free | DB-centric |
 
-### Scan Frequency Configuration
+### Scan Frequency Options
 
-```typescript
-enum ScanFrequency {
-  UNMONITORED = 'UNMONITORED',  // No automatic scanning
-  HOURLY = 'HOURLY',
-  DAILY = 'DAILY',              // Default for most use cases
-  WEEKLY = 'WEEKLY',
-  MONTHLY = 'MONTHLY',
-}
+Common frequencies for different use cases:
 
-function calculateNextScan(frequency: ScanFrequency, from: Date = new Date()): Date {
-  switch (frequency) {
-    case 'HOURLY':  return addHours(from, 1);
-    case 'DAILY':   return addDays(from, 1);
-    case 'WEEKLY':  return addWeeks(from, 1);
-    case 'MONTHLY': return addMonths(from, 1);
-    default:        return null; // UNMONITORED
-  }
-}
-```
+| Frequency | Use Case |
+|-----------|----------|
+| **Hourly** | High-value environments, incident response readiness |
+| **Daily** | Default for most compliance and drift scanning |
+| **Weekly** | Cost optimization, architecture reviews |
+| **Monthly** | Low-change environments, audit reports |
+| **Unmonitored** | Opt-out — no automatic scanning |
+
+Track each configuration's last scan time and next scheduled scan to prevent duplicate dispatches and enable catch-up after outages.
 
 ### Preventing Schedule Overload
 
@@ -148,122 +116,68 @@ graph TD
     FIX --> NOTIFY2[Notify team: PR ready for review]
 ```
 
-```typescript
-async function handleDriftScanResult(result: DriftScanResult) {
-  const driftConfig = await db.configDrift.findUnique({
-    where: { id: result.configId },
-  });
+The drift scan handler follows a simple decision tree:
 
+1. **No drift** — mark the scan as clean, update last scan timestamp
+2. **Drift detected** — create drift findings (resource address, change type, status)
+3. **Auto-remediation enabled?** — dispatch a remediation agent to fix the drift and create a PR
+4. **Always notify** — send a notification to the configured channel regardless of auto-remediation
+
+```typescript
+// Pseudocode: drift scan result handling
+async function handleDriftScanResult(result: DriftScanResult) {
   if (result.driftResources.length === 0) {
-    await db.configDriftScan.update({
-      where: { id: result.scanId },
-      data: { status: 'CLEAN', completedAt: new Date() },
-    });
+    await markScanClean(result.scanId);
     return;
   }
 
-  // Drift detected — create findings
-  for (const resource of result.driftResources) {
-    await db.configDriftFinding.create({
-      data: {
-        configDriftId: driftConfig.id,
-        resourceAddress: resource.address,
-        providerResourceId: resource.resourceId,
-        changeType: resource.changeType,
-        status: 'OPEN',
-      },
-    });
-  }
+  // Store drift findings for tracking
+  await createDriftFindings(result.driftResources);
 
-  // Auto-remediation if enabled
-  if (driftConfig.autoCreatePR) {
+  // Auto-remediation if enabled for this repository
+  if (result.config.autoRemediate) {
     await dispatchRemediationAgent({
       type: 'drift-remediation',
-      agentSlug: 'drift-remediation',
-      context: {
-        repositoryId: driftConfig.repositoryId,
-        driftFindings: result.driftResources,
-        pipelineId: driftConfig.pipelineId,
-      },
+      repository: result.config.repository,
+      driftFindings: result.driftResources,
     });
   }
 
   // Always notify
-  await sendNotification({
-    channel: driftConfig.notificationChannel,
-    message: formatDriftNotification(driftConfig, result),
+  await sendNotification(result.config.notificationChannel, {
+    message: formatDriftNotification(result),
   });
 }
 ```
 
 ### 2. Scheduled Compliance Scanning
 
-```typescript
-// Nightly: scan all cloud accounts for compliance findings
-async function scheduledComplianceScan() {
-  const integrations = await db.cloudIntegration.findMany({
-    where: { complianceScanEnabled: true, deletedAt: null },
-  });
-
-  for (const integration of integrations) {
-    await dispatchTask({
-      type: 'compliance-scan',
-      payload: {
-        integrationId: integration.id,
-        frameworks: integration.enabledFrameworks, // ['CIS', 'SOC2', 'ISO27001']
-        autoRemediate: integration.autoRemediateEnabled,
-      },
-    });
-  }
-}
-```
+Nightly: scan all connected cloud accounts for compliance findings. For each account with compliance scanning enabled, dispatch a task with the configured frameworks (CIS, SOC2, ISO 27001) and auto-remediation preference. Results feed into the data plane and trigger notifications.
 
 ### 3. Recurring Cost Optimization
 
-```typescript
-// Weekly: analyze cloud spending and suggest optimizations
-async function scheduledCostAnalysis() {
-  const organizations = await db.organization.findMany({
-    where: { costOptimizationEnabled: true },
-  });
-
-  for (const org of organizations) {
-    await dispatchTask({
-      type: 'cost-analysis',
-      payload: {
-        organizationId: org.id,
-        lookbackDays: 30,
-        actions: ['identify-unused', 'rightsizing-recs', 'ri-coverage'],
-        autoCreatePR: org.costAutoRemediate,
-      },
-    });
-  }
-}
-```
+Weekly: analyze cloud spending across accounts. Dispatch a cost analysis agent that identifies unused resources, rightsizing candidates, and reserved instance coverage gaps. If auto-remediation is enabled, the agent creates PRs to remove or resize resources.
 
 ### 4. Automated PR Review
 
-```typescript
-// Event-driven (not scheduled, but fully autonomous)
-async function handlePRWebhook(event: PREvent) {
-  if (event.action === 'opened' || event.action === 'synchronize') {
-    const repo = await db.repository.findUnique({
-      where: { id: event.repositoryId },
-    });
+Event-driven (not scheduled, but fully autonomous): when a PR is opened or updated, check if the repository has automated review enabled and the PR contains IaC changes. If so, dispatch a review agent that analyzes the changes, runs validation tools, and posts review comments.
 
-    if (repo.prReviewEnabled && hasIaCChanges(event.changedFiles)) {
-      await dispatchTask({
-        type: 'pr-review',
-        agentSlug: 'pr-reviewer',
-        payload: {
-          pullRequestNumber: event.number,
-          repositoryId: repo.id,
-          baseBranch: event.baseBranch,
-          headBranch: event.headBranch,
-        },
-      });
-    }
-  }
+```typescript
+// Example: webhook handler for automated PR review
+async function handlePRWebhook(event: PREvent) {
+  if (event.action !== 'opened' && event.action !== 'synchronize') return;
+  if (!isReviewEnabled(event.repositoryId)) return;
+  if (!hasIaCChanges(event.changedFiles)) return;
+
+  await dispatchTask({
+    type: 'pr-review',
+    payload: {
+      pullRequestNumber: event.number,
+      repositoryId: event.repositoryId,
+      baseBranch: event.baseBranch,
+      headBranch: event.headBranch,
+    },
+  });
 }
 ```
 
@@ -310,114 +224,34 @@ graph LR
 
 ### Event Types and Severity
 
-```typescript
-enum NotificationSeverity {
-  INFO = 'info',         // Agent completed work, scan finished
-  WARNING = 'warning',   // Budget threshold, partial failure
-  ACTION = 'action',     // PR ready for review, approval needed
-  URGENT = 'urgent',     // Agent failed, critical finding
-}
+Categorize notification events by urgency so routing rules can direct them appropriately:
 
-interface NotificationEvent {
-  type: string;
-  severity: NotificationSeverity;
-  title: string;
-  body: string;
-  metadata: {
-    organizationId: string;
-    agentSlug?: string;
-    sessionId?: string;
-    repositoryName?: string;
-    prUrl?: string;
-    findingId?: string;
-  };
-  channels: string[];     // Where to send
-  dedupeKey?: string;     // Prevent duplicate notifications
-}
+| Severity | Meaning | Examples |
+|----------|---------|---------|
+| **Info** | Agent completed work, scan finished clean | Drift remediated, scan clean |
+| **Warning** | Budget threshold, partial failure, findings detected | Drift detected, budget exceeded |
+| **Action** | Human action needed — PR review, approval | PR created, agent needs input |
+| **Urgent** | Critical failure, critical security finding | Agent failed, critical finding |
 
-const EVENT_SEVERITY: Record<string, NotificationSeverity> = {
-  'pr.created': 'action',
-  'pr.review_requested': 'action',
-  'scan.completed.clean': 'info',
-  'scan.completed.findings': 'warning',
-  'drift.detected': 'warning',
-  'drift.auto_remediated': 'info',
-  'agent.failed': 'urgent',
-  'agent.needs_input': 'action',
-  'agent.budget_exceeded': 'warning',
-  'finding.critical': 'urgent',
-};
-```
+Map each event type to a default severity:
 
-### Channel: Slack (Webhook + Block Kit)
+| Event | Default Severity |
+|-------|-----------------|
+| `pr.created` | Action |
+| `scan.completed.clean` | Info |
+| `scan.completed.findings` | Warning |
+| `drift.detected` | Warning |
+| `drift.auto_remediated` | Info |
+| `agent.failed` | Urgent |
+| `agent.needs_input` | Action |
+| `agent.budget_exceeded` | Warning |
+| `finding.critical` | Urgent |
 
-Full implementation — other channels follow the same pattern:
+Each notification event should carry: type, severity, title, body, metadata (organization, agent, repository, PR URL if applicable), and an optional deduplication key to prevent duplicate notifications for the same event.
 
-```typescript
-interface SlackNotificationConfig {
-  webhookUrl: string;
-  channel?: string;
-  mentionUsers?: string[];
-  mentionGroups?: string[];
-}
+### Channel Implementations
 
-async function sendSlackNotification(
-  config: SlackNotificationConfig,
-  event: NotificationEvent
-) {
-  const colorMap = {
-    info: '#36a64f',
-    warning: '#ff9500',
-    action: '#2196F3',
-    urgent: '#ff0000',
-  };
-
-  const blocks = [
-    {
-      type: 'header',
-      text: { type: 'plain_text', text: event.title },
-    },
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: event.body },
-    },
-  ];
-
-  if (event.metadata.prUrl) {
-    blocks.push({
-      type: 'actions',
-      elements: [{
-        type: 'button',
-        text: { type: 'plain_text', text: 'Review PR' },
-        url: event.metadata.prUrl,
-        style: 'primary',
-      }],
-    });
-  }
-
-  let text = '';
-  if (event.severity === 'urgent' && config.mentionGroups?.length) {
-    text = config.mentionGroups.map(g => `<!subteam^${g}>`).join(' ');
-  }
-
-  await fetch(config.webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      channel: config.channel,
-      text,
-      attachments: [{
-        color: colorMap[event.severity],
-        blocks,
-      }],
-    }),
-  });
-}
-```
-
-### Other Channels
-
-Each channel follows the same pattern: receive a `NotificationEvent`, format it for the platform, POST it.
+Each channel follows the same pattern: receive a notification event, format it for the platform, POST it. Key considerations per channel:
 
 | Channel | API / Protocol | Key Detail |
 |---------|---------------|------------|
@@ -430,83 +264,29 @@ Each channel follows the same pattern: receive a `NotificationEvent`, format it 
 
 ## Notification Routing Rules
 
-```typescript
-interface NotificationRule {
-  id: string;
-  organizationId: string;
-  name: string;
-  filter: {
-    eventTypes?: string[];           // ['pr.created', 'drift.detected']
-    severities?: NotificationSeverity[];
-    agentSlugs?: string[];
-    repositories?: string[];
-  };
-  channel: {
-    type: 'slack' | 'teams' | 'email' | 'pagerduty' | 'webhook';
-    config: Record<string, unknown>;
-  };
-  dedupeWindowMs?: number;
-  enabled: boolean;
-}
+Routing rules determine which events go to which channels. Each rule specifies:
 
-async function routeNotification(event: NotificationEvent) {
-  const rules = await db.notificationRule.findMany({
-    where: { organizationId: event.metadata.organizationId, enabled: true },
-  });
+- **Filter** — which event types, severities, agents, or repositories to match
+- **Channel** — where to send (Slack, Teams, email, PagerDuty, webhook)
+- **Deduplication window** — prevent duplicate notifications for the same event within a time window
 
-  for (const rule of rules) {
-    if (!matchesFilter(event, rule.filter)) continue;
+The routing logic: for each notification event, evaluate all active rules for the organization. If the event matches a rule's filter and isn't deduplicated, send it to the configured channel.
 
-    // Deduplicate
-    if (rule.dedupeWindowMs && event.dedupeKey) {
-      const cacheKey = `notif:${rule.id}:${event.dedupeKey}`;
-      const exists = await redis.get(cacheKey);
-      if (exists) continue;
-      await redis.set(cacheKey, '1', 'PX', rule.dedupeWindowMs);
-    }
-
-    await sendToChannel(rule.channel, event);
-  }
-}
-```
+This gives teams fine-grained control: "send all `urgent` events to PagerDuty, all `pr.created` events to #infra-prs in Slack, and daily digests to email."
 
 ---
 
 ## Daily Digests
 
-Instead of individual notifications for every event, send periodic summaries:
+Instead of individual notifications for every event, send periodic summaries. A daily digest should include:
 
-```typescript
-async function sendDailyDigest(organizationId: string) {
-  const since = subDays(new Date(), 1);
+- **Agent sessions**: total, completed, failed
+- **PRs created**: count with links to the most important ones
+- **Token usage**: total tokens consumed (for cost tracking)
+- **Open findings**: new findings detected, findings auto-remediated
+- **Failures**: any agent failures with brief context
 
-  const stats = await db.$queryRaw`
-    SELECT
-      COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
-      COUNT(*) FILTER (WHERE status = 'FAILED') as failed,
-      COUNT(DISTINCT "sessionId") as sessions,
-      SUM("inputTokens" + "outputTokens") as total_tokens
-    FROM agent_session_runs
-    WHERE "organizationId" = ${organizationId}
-      AND "createdAt" >= ${since}
-  `;
-
-  const prsCreated = await db.pullRequest.count({
-    where: { organizationId, createdAt: { gte: since } },
-  });
-
-  const digest = {
-    title: `Daily Agent Summary — ${format(new Date(), 'MMM d, yyyy')}`,
-    body: [
-      `**${stats.sessions}** agent sessions | **${stats.completed}** completed | **${stats.failed}** failed`,
-      `**${prsCreated}** PRs created | **${stats.total_tokens?.toLocaleString()}** tokens used`,
-    ].join('\n'),
-    severity: stats.failed > 0 ? 'warning' : 'info',
-  };
-
-  await routeNotification(digest);
-}
-```
+Set the digest severity based on content: `warning` if there are failures, `info` if everything is clean. Route digests through the same notification system so teams can choose their preferred channel.
 
 ---
 

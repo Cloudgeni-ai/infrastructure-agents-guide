@@ -316,39 +316,39 @@ In practice, use both: inject the obvious context up front, and give the agent s
 
 ## Exposing Data to Agents
 
-Raw database access is too dangerous and too unstructured. Expose the data plane through typed skill APIs that return exactly what agents need:
+Raw database access is too dangerous and too unstructured. Expose the data plane through typed APIs (tools, skills, or MCP resources) that return exactly what agents need. Example query patterns:
 
 ```typescript
 // Cloud resources — filtered, paginated, pre-serialized
-const resources = await getCloudResources({
+const resources = await queryResources({
   provider: 'AWS',
   resourceType: 'AWS_S3_BUCKET',
-  state: 'DISCOVERED',        // Only unmanaged resources
+  managedByIaC: false,          // Only unmanaged resources
   search: 'prod',
 });
 
 // Compliance findings — linked to affected resources
-const findings = await getComplianceFindings({
+const findings = await queryFindings({
   severity: 'HIGH',
   status: 'OPEN',
   resourceType: 'AWS_S3_BUCKET',
 });
 
 // Resource relationships — graph traversal
-const graph = await getResourceGraph({
+const graph = await queryResourceGraph({
   resourceId: 'arn:aws:ec2:us-east-1:123:vpc/vpc-abc',
   depth: 2,
 });
 // Returns: VPC → Subnets → Instances, VPC → IGW, VPC → Security Groups
 
 // Organizational knowledge — searchable
-const docs = await searchKnowledgeBase({
+const docs = await searchKnowledge({
   query: 'VPC isolation policy payments team',
   sources: ['wiki', 'adr', 'policy'],
 });
 ```
 
-The agent receives structured, pre-formatted responses. No raw CLI output, no pagination, no rate limiting.
+The agent receives structured, pre-formatted responses. No raw CLI output, no pagination, no rate limiting. Whether you implement these as tool functions, MCP resources, or REST endpoints is an implementation choice — the key is typed, scoped access to each data layer.
 
 ---
 

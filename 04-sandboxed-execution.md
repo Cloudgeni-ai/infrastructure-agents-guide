@@ -64,10 +64,10 @@ services:
   task-worker:
     build:
       context: .
-      dockerfile: apps/task-worker/Dockerfile
+      dockerfile: Dockerfile.worker
     environment:
       - REDIS_URL=redis://redis:6379
-      - TASK_WORKER_MODE=daemon
+      - QUEUE_NAME=agent-tasks
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock  # For spawning sandbox containers
     networks:

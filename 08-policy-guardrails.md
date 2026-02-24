@@ -47,44 +47,33 @@ Layer 2 (prompt rules) is the weakest — models can be manipulated. Layers 1 an
 
 ## Autonomy Tiers in Practice
 
+Define graduated levels of autonomy. A five-tier model covers most use cases:
+
+| Tier | Name | What the Agent Can Do | Approval Required |
+|------|------|----------------------|-------------------|
+| 0 | **Observe** | Read-only. Analyze, summarize, recommend. | N/A |
+| 1 | **Recommend** | Suggest changes but not execute them. | N/A |
+| 2 | **Draft** | Create PRs. No direct execution. | PR review only |
+| 3 | **Sandbox** | Execute in isolated sandbox. | Credential requests |
+| 4 | **Prod (gated)** | Execute in prod with human approval gate. | All production actions |
+
+Each tier maps to a set of allowed tools, denied tools, and approval requirements:
+
 ```typescript
-enum AutonomyTier {
-  OBSERVE = 0,     // Read-only. Can analyze, summarize, recommend.
-  RECOMMEND = 1,   // Can suggest changes but not execute.
-  DRAFT = 2,       // Can create PRs. No direct execution.
-  SANDBOX = 3,     // Can execute in isolated sandbox.
-  PROD_GATED = 4,  // Can execute in prod WITH human approval.
-}
-
-interface AgentPermissions {
-  tier: AutonomyTier;
-  allowedTools: string[];
-  deniedTools: string[];
-  maxTurns: number;
-  maxTokenBudget: number;
-  requiresApproval: {
-    prCreation: boolean;
-    credentialRequest: boolean;
-    productionAccess: boolean;
-  };
-}
-
-// Example tier mappings
-const TIER_DEFAULTS: Record<AutonomyTier, Partial<AgentPermissions>> = {
-  [AutonomyTier.OBSERVE]: {
+// Example: tier-to-permissions mapping
+const tierPermissions = {
+  observe: {
     allowedTools: ['read-file', 'git-diff', 'describe-resource', 'query-logs'],
     deniedTools: ['write-file', 'git-push', 'create-pr', 'cloud-credentials'],
-    requiresApproval: { prCreation: true, credentialRequest: true, productionAccess: true },
   },
-  [AutonomyTier.DRAFT]: {
-    allowedTools: [], // All tools
+  draft: {
+    allowedTools: ['*'],
     deniedTools: ['terraform-apply', 'kubectl-apply'],
-    requiresApproval: { prCreation: false, credentialRequest: false, productionAccess: true },
   },
-  [AutonomyTier.PROD_GATED]: {
-    allowedTools: [],
+  prod_gated: {
+    allowedTools: ['*'],
     deniedTools: [],
-    requiresApproval: { prCreation: false, credentialRequest: false, productionAccess: true },
+    requiresApproval: ['production-access'],
   },
 };
 ```
@@ -93,85 +82,38 @@ const TIER_DEFAULTS: Record<AutonomyTier, Partial<AgentPermissions>> = {
 
 ## Organization-Level Policies
 
-Organizations define policies in plain language. These are injected into the agent context at dispatch time:
+Organizations define policies in plain language (typically markdown). These are stored with version history, toggled on/off, and injected into the agent context at dispatch time.
 
-```typescript
-// Policy stored in database
-interface CustomPolicy {
-  id: string;
-  name: string;
-  content: string;       // Markdown — human-readable
-  isActive: boolean;
-  version: number;
-  organizationId: string;
-}
+Example policies:
 
-// Example policies
-const examplePolicies = [
-  {
-    name: 'No Production Direct Changes',
-    content: `
+```markdown
 ## Policy: No Direct Production Changes
 - All changes to production environments MUST go through a pull request
 - The PR MUST pass all CI checks before merge
 - Production PRs require approval from a senior engineer
 - Emergency changes follow the break-glass procedure documented in the runbook
-    `,
-  },
-  {
-    name: 'Encryption Requirements',
-    content: `
+```
+
+```markdown
 ## Policy: Encryption at Rest
 - All S3 buckets MUST have server-side encryption enabled (SSE-KMS preferred)
 - All RDS instances MUST have storage encryption enabled
 - All EBS volumes MUST be encrypted
 - When fixing encryption findings, use the organization's KMS key: alias/infra-key
-    `,
-  },
-  {
-    name: 'Naming Conventions',
-    content: `
+```
+
+```markdown
 ## Policy: Resource Naming
 - All resources follow the pattern: {env}-{service}-{resource_type}
 - Examples: prod-api-rds, staging-web-s3, dev-auth-lambda
 - Tags required: Environment, Service, Owner, CostCenter, ManagedBy=terraform
-    `,
-  },
-];
 ```
 
 ### Policy Digest Injection
 
-Before dispatching an agent, compile all active policies into a single document:
+Before dispatching an agent, compile all active policies into a single document and include it in the agent's system prompt or context. The agent reads these as hard constraints — not suggestions.
 
-```typescript
-async function buildPolicyDigest(organizationId: string): Promise<string> {
-  const policies = await db.customPolicy.findMany({
-    where: { organizationId, isActive: true, deletedAt: null },
-    orderBy: { name: 'asc' },
-  });
-
-  if (policies.length === 0) return '';
-
-  const digest = [
-    '# Organization Policies',
-    '',
-    'You MUST follow these policies when making changes:',
-    '',
-    ...policies.map(p => p.content),
-  ].join('\n');
-
-  return digest;
-}
-
-// Injected into the agent payload at dispatch time
-const payload = {
-  prompt: userMessage,
-  systemPrompt: agentConfig.systemPrompt,
-  policyDigest: await buildPolicyDigest(org.id),
-  // ...
-};
-```
+The key requirement: policies must be **versioned** (so you can diff what changed), **auditable** (who edited, when), and **plain language** (so the person debugging agent behavior can read them without learning Rego or Sentinel).
 
 ---
 
@@ -186,47 +128,25 @@ sequenceDiagram
     participant API
     participant User
 
-    Agent->>Worker: AskUser("Should I proceed with this approach?")
-    Worker->>Worker: Set run status = WAITING_INPUT
-    Worker->>API: Emit question event via Redis
+    Agent->>Worker: Request human input
+    Worker->>Worker: Pause execution
+    Worker->>API: Emit question event
 
-    API->>User: SSE push: question notification
+    API->>User: Push notification (SSE, webhook, etc.)
     User->>API: Submit answer
-    API->>Worker: Forward answer via control stream
+    API->>Worker: Forward answer
 
-    Worker->>Worker: Set run status = RUNNING
     Worker->>Agent: Continue with user's answer
 ```
 
-```typescript
-// Agent skill: pause for human input
-export async function askUser(question: string, options?: string[]): Promise<string> {
-  const response = await fetch('http://localhost:3000/ask-user', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, options }),
-  });
-  return response.json().then(r => r.answer);
-}
+The implementation pattern:
+1. Agent calls a "request input" tool with a question and optional choices
+2. Worker pauses execution and emits a question event to the notification system
+3. User receives the question (via web UI, Slack, email) and responds
+4. Worker receives the answer on a control channel and resumes the agent
+5. A timeout (e.g., 24 hours) auto-fails the request if no human responds
 
-// Internal server handler
-async function handleAskUser(req: Request): Promise<Response> {
-  const { question, options } = await req.json();
-
-  // Emit question event to Redis (picked up by SSE)
-  await emitEvent(currentRunId, {
-    type: 'question',
-    data: { question, options, timestamp: Date.now() },
-  });
-
-  // Wait for response on control channel
-  const answer = await waitForControl(currentRunId, 'user_response', {
-    timeoutMs: 24 * 60 * 60 * 1000, // 24h timeout
-  });
-
-  return Response.json({ answer });
-}
-```
+The key design decision: **how does the worker wait?** Options include blocking on a Redis pub/sub channel, polling a database, or using a workflow engine (Temporal, Inngest) that natively supports human-in-the-loop pauses.
 
 ---
 

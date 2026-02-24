@@ -38,64 +38,49 @@ Traces                             Traces
 
 ## OpenTelemetry Attribute Schema
 
-Define a consistent attribute namespace for all agent spans:
+Define a consistent attribute namespace for all agent spans. Pick a prefix (e.g., `agent.` or your product name) and stick with it. Here's a recommended set of attributes organized by category:
 
-```typescript
-// Attribute constants for agent telemetry
-const ATTR = {
-  // Request correlation
-  REQUEST_ID: 'infra_agent.request.id',
-  CORRELATION_ID: 'infra_agent.correlation.id',
+| Category | Attribute | Example Value |
+|----------|-----------|---------------|
+| **Correlation** | `agent.request.id` | `req-abc123` |
+| | `agent.correlation.id` | `corr-xyz789` |
+| **Agent context** | `agent.session.id` | `sess-456` |
+| | `agent.run.id` | `run-789` |
+| | `agent.type` | `remediation` |
+| | `agent.organization.id` | `org-123` |
+| **Task context** | `agent.task.type` | `compliance-fix` |
+| | `agent.task.priority` | `high` |
+| | `agent.trigger.source` | `schedule` |
+| **Execution** | `agent.iteration.count` | `3` |
+| | `agent.tokens.input` | `12500` |
+| | `agent.tokens.output` | `3200` |
+| | `agent.tool_calls.count` | `8` |
+| **Performance** | `agent.perf.repo_clone_ms` | `4500` |
+| | `agent.perf.pipeline_wait_ms` | `62000` |
+| | `agent.perf.total_duration_ms` | `180000` |
+| **Queue** | `agent.queue.depth` | `12` |
+| | `agent.queue.wait_ms` | `3200` |
+| **Credentials** | `agent.credential.scope` | `management.azure.com` |
+| | `agent.credential.expires_at` | ISO timestamp |
 
-  // Agent context
-  AGENT_SESSION_ID: 'infra_agent.session.id',
-  AGENT_RUN_ID: 'infra_agent.run.id',
-  AGENT_SLUG: 'infra_agent.slug',
-  ORGANIZATION_ID: 'infra_agent.organization.id',
-
-  // Task context
-  TASK_TYPE: 'infra_agent.task.type',
-  TASK_PRIORITY: 'infra_agent.task.priority',
-  TRIGGER_SOURCE: 'infra_agent.trigger.source',
-
-  // Execution metrics
-  ITERATION_COUNT: 'infra_agent.iteration.count',
-  MAX_ITERATIONS: 'infra_agent.iteration.max',
-  TOKEN_USAGE_INPUT: 'infra_agent.tokens.input',
-  TOKEN_USAGE_OUTPUT: 'infra_agent.tokens.output',
-  TOOL_CALLS_COUNT: 'infra_agent.tool_calls.count',
-
-  // Performance
-  SESSION_RESTORE_MS: 'infra_agent.perf.session_restore_ms',
-  REPO_CLONE_MS: 'infra_agent.perf.repo_clone_ms',
-  PIPELINE_WAIT_MS: 'infra_agent.perf.pipeline_wait_ms',
-  TOTAL_DURATION_MS: 'infra_agent.perf.total_duration_ms',
-
-  // Queue metrics
-  QUEUE_DEPTH: 'infra_agent.queue.depth',
-  QUEUE_WAIT_MS: 'infra_agent.queue.wait_ms',
-
-  // Credential tracking
-  CREDENTIAL_ISSUED: 'infra_agent.credential.issued',
-  CREDENTIAL_SCOPE: 'infra_agent.credential.scope',
-  CREDENTIAL_EXPIRES_AT: 'infra_agent.credential.expires_at',
-} as const;
-```
+The key principle: every span should carry enough context to answer "which agent, which task, which organization, how long, how much?"
 
 ### Instrumenting the Agent Lifecycle
+
+Create nested spans for each phase of agent execution. This gives you a trace tree that shows exactly where time was spent:
 
 ```typescript
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 
-const tracer = trace.getTracer('infra-agent-worker');
+const tracer = trace.getTracer('agent-worker');
 
 async function processAgentTask(task: AgentTask) {
   return tracer.startActiveSpan('agent.process_task', async (span) => {
     span.setAttributes({
-      [ATTR.AGENT_SESSION_ID]: task.sessionId,
-      [ATTR.AGENT_SLUG]: task.agentSlug,
-      [ATTR.TASK_TYPE]: task.type,
-      [ATTR.TRIGGER_SOURCE]: task.trigger.source,
+      'agent.session.id': task.sessionId,
+      'agent.type': task.agentType,
+      'agent.task.type': task.type,
+      'agent.trigger.source': task.trigger.source,
     });
 
     try {
@@ -103,7 +88,7 @@ async function processAgentTask(task: AgentTask) {
       await tracer.startActiveSpan('agent.clone_repo', async (cloneSpan) => {
         const startMs = Date.now();
         await cloneRepository(task.repository);
-        cloneSpan.setAttribute(ATTR.REPO_CLONE_MS, Date.now() - startMs);
+        cloneSpan.setAttribute('agent.perf.repo_clone_ms', Date.now() - startMs);
         cloneSpan.end();
       });
 
@@ -111,10 +96,10 @@ async function processAgentTask(task: AgentTask) {
       const result = await tracer.startActiveSpan('agent.run', async (runSpan) => {
         const result = await executeAgent(task);
         runSpan.setAttributes({
-          [ATTR.ITERATION_COUNT]: result.iterations,
-          [ATTR.TOKEN_USAGE_INPUT]: result.inputTokens,
-          [ATTR.TOKEN_USAGE_OUTPUT]: result.outputTokens,
-          [ATTR.TOOL_CALLS_COUNT]: result.toolCalls,
+          'agent.iteration.count': result.iterations,
+          'agent.tokens.input': result.inputTokens,
+          'agent.tokens.output': result.outputTokens,
+          'agent.tool_calls.count': result.toolCalls,
         });
         runSpan.end();
         return result;
@@ -296,13 +281,13 @@ All support OpenTelemetry natively — instrument once with OTel SDK, export to 
 
 | Panel | Query (PromQL) | Purpose |
 |-------|---------------|---------|
-| Active sessions | `count(infra_agent_sessions_active)` | Current load |
-| Avg completion time | `histogram_quantile(0.95, infra_agent_task_duration_seconds_bucket)` | Performance |
-| Success rate | `rate(infra_agent_tasks_total{status="success"}[1h]) / rate(infra_agent_tasks_total[1h])` | Reliability |
-| Token usage | `sum(rate(infra_agent_tokens_total[1h])) by (agent_slug)` | Cost tracking |
-| Queue depth | `infra_agent_queue_depth` | Backlog |
-| PRs created | `increase(infra_agent_prs_created_total[24h])` | Output |
-| Credential issuances | `rate(infra_agent_credentials_issued_total[1h])` | Security audit |
+| Active sessions | `count(agent_sessions_active)` | Current load |
+| Avg completion time | `histogram_quantile(0.95, agent_task_duration_seconds_bucket)` | Performance |
+| Success rate | `rate(agent_tasks_total{status="success"}[1h]) / rate(agent_tasks_total[1h])` | Reliability |
+| Token usage | `sum(rate(agent_tokens_total[1h])) by (agent_type)` | Cost tracking |
+| Queue depth | `agent_queue_depth` | Backlog |
+| PRs created | `increase(agent_prs_created_total[24h])` | Output |
+| Credential issuances | `rate(agent_credentials_issued_total[1h])` | Security audit |
 
 ---
 
