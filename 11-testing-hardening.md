@@ -1,4 +1,4 @@
-# Chapter 12: Testing & Hardening
+# Chapter 11: Testing & Hardening
 
 > Trajectory tests, prompt injection defense, and security benchmarks.
 
@@ -303,4 +303,4 @@ ONGOING:
 
 ## Next Chapter
 
-[Chapter 13: UX, Usability & Team Onboarding →](./13-ux-usability.md)
+[Chapter 12: UX, Usability & Team Onboarding →](./12-ux-usability.md)

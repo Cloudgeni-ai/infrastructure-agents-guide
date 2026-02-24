@@ -1,4 +1,4 @@
-# Chapter 14: Risk Framework & Checklists
+# Chapter 13: Risk Framework & Checklists
 
 > Decision matrices, compliance mapping, and go-live checklists for infrastructure agents.
 

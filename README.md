@@ -2,7 +2,7 @@
 
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Code License: MIT](https://img.shields.io/badge/Code_License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Chapters: 14](https://img.shields.io/badge/Chapters-14-green.svg)](#guide-structure)
+[![Chapters: 13](https://img.shields.io/badge/Chapters-13-green.svg)](#guide-structure)
 
 > How to design, build, and operate AI agents for infrastructure teams — safely.
 
@@ -35,10 +35,9 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 | 8 | [Policy & Guardrails](./08-policy-guardrails.md) | Tool restrictions, approval gates, autonomy tiers |
 | 9 | [Observability & Audit](./09-observability.md) | OpenTelemetry, action trails, debugging agent failures |
 | 10 | [Autonomous Operations & Notifications](./10-operations-notifications.md) | Scheduling, autonomous agents, notification routing, escalation chains |
-| 11 | [Session & State Management](./11-session-state.md) | Multi-turn conversations, persistence, session forking |
-| 12 | [Testing & Hardening](./12-testing-hardening.md) | Trajectory tests, prompt injection defense, security benchmarks |
-| 13 | [UX & Usability](./13-ux-usability.md) | Multi-tenancy, RBAC, onboarding, team collaboration, error prevention |
-| 14 | [Risk Framework & Checklists](./14-risk-framework.md) | Decision matrices, compliance mapping, go-live checklists |
+| 11 | [Testing & Hardening](./11-testing-hardening.md) | Trajectory tests, prompt injection defense, security benchmarks |
+| 12 | [UX & Usability](./12-ux-usability.md) | Multi-tenancy, RBAC, onboarding, team collaboration, error prevention |
+| 13 | [Risk Framework & Checklists](./13-risk-framework.md) | Decision matrices, compliance mapping, go-live checklists |
 
 ---
 

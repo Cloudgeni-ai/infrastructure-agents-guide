@@ -557,7 +557,7 @@ async function escalate(event: NotificationEvent, level: number = 0) {
 
 ## Next Chapter
 
-[Chapter 11: Session & State Management →](./11-session-state.md)
+[Chapter 11: Testing & Hardening →](./11-testing-hardening.md)
 
 ---
 

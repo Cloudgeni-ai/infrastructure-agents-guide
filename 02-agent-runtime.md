@@ -425,6 +425,59 @@ type TaskType = keyof typeof TASK_REGISTRY;
 
 ---
 
+## Multi-Turn Sessions
+
+Infrastructure agent sessions aren't like chat sessions. They can last hours or days (waiting for PR review or pipeline completion), span multiple worker instances, and resume days later with follow-up questions.
+
+The key optimization: **keep the LLM agent process alive between turns** instead of restarting for every message.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API
+    participant Worker
+    participant Agent as LLM Agent Process
+
+    User->>API: "Fix the S3 encryption"
+    API->>Worker: Dispatch run 1
+    Worker->>Agent: start(prompt, systemPrompt)
+    Agent->>Agent: Working...
+    Agent->>Worker: AskUser("Which KMS key?")
+    Worker->>API: Status: WAITING_INPUT
+
+    Note over Agent,Worker: Process stays alive.<br/>No restart needed.
+
+    User->>API: "Use alias/infra-key"
+    API->>Worker: Continue run 2
+    Worker->>Agent: continue("Use alias/infra-key")
+    Agent->>Agent: Continues from where it paused
+    Agent->>Worker: Completed (PR created)
+```
+
+### Surviving Worker Restarts
+
+When a worker crashes or the session moves to a different worker, you need to persist and restore state. For git working directories, the **git bundle pattern** avoids persisting full repositories:
+
+```typescript
+// Persist: create a compressed binary diff of the working directory
+async function persistGitState(workDir: string, sessionId: string, storage: BlobStorage) {
+  const bundlePath = path.join(os.tmpdir(), `${sessionId}.bundle`);
+  await exec(`git bundle create ${bundlePath} --all`, { cwd: workDir });
+  await storage.upload(bundlePath, `sessions/${sessionId}/git.bundle`);
+}
+
+// Restore: clone from the bundle on a new worker
+async function restoreGitState(workDir: string, sessionId: string, storage: BlobStorage) {
+  const bundlePath = path.join(os.tmpdir(), `${sessionId}.bundle`);
+  await storage.download(`sessions/${sessionId}/git.bundle`, bundlePath);
+  await exec(`git clone ${bundlePath} ${workDir}`);
+}
+```
+
+Store bundles and agent session files in blob storage (S3, Azure Blob) and restore in parallel when a session migrates to a new worker.
+
+---
+
 ## Real-Time Output Streaming
 
 Agents are slow. Users need to see what's happening in real-time. Use Server-Sent Events (SSE) backed by pub/sub:

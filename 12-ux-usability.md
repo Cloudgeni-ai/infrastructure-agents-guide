@@ -1,6 +1,6 @@
-# Chapter 13: UX, Usability & Team Onboarding
+# Chapter 12: UX, Usability & Team Onboarding
 
-> How to package infrastructure agents so everyone can adopt them safely — without reading a 13-chapter guide first.
+> How to package infrastructure agents so everyone can adopt them safely — without reading a 12-chapter guide first.
 
 ---
 
@@ -752,7 +752,7 @@ SAFETY
 
 ## Next Chapter
 
-[Chapter 14: Risk Framework & Checklists →](./14-risk-framework.md)
+[Chapter 13: Risk Framework & Checklists →](./13-risk-framework.md)
 
 ---
 
