@@ -27,7 +27,7 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 |---|---------|-------------------|
 | 1 | [Architecture Overview](./01-architecture.md) | The six planes of an infra-agent system |
 | 2 | [Agent Runtime & Orchestration](./02-agent-runtime.md) | Task queuing, worker isolation, consumer groups |
-| 3 | [Skill & Tool System](./03-skill-system.md) | How agents gain capabilities safely |
+| 3 | [Tools, CLIs & Skills](./03-tools-skills.md) | CLI tooling, skill systems, MCP, and capability management |
 | 4 | [Sandboxed Execution](./04-sandboxed-execution.md) | Container isolation with Docker, Modal, Azure Container Apps |
 | 5 | [Credential Management](./05-credential-management.md) | Short-lived tokens, vault patterns, blast radius control |
 | 6 | [The Data Plane](./06-data-plane.md) | Infrastructure knowledge layer, resource graphs, context serialization |

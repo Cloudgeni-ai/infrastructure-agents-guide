@@ -543,4 +543,4 @@ app.get('/api/v1/sessions/:sessionId/runs/:runId/events', (req, res) => {
 
 ## Next Chapter
 
-[Chapter 3: Skill & Tool System →](./03-skill-system.md)
+[Chapter 3: Tools, CLIs & Skills →](./03-tools-skills.md)

@@ -1,36 +1,103 @@
-# Chapter 3: Skill & Tool System
+# Chapter 3: Tools, CLIs & Skills
 
-> How agents gain capabilities — safely and extensibly.
-
----
-
-## The Problem With Raw Tool Access
-
-The naive approach to agent tools is: register shell commands, let the model call them. This is how most early agents worked (AutoGPT, BabyAGI) and it's how most security incidents happen.
-
-The issues:
-- **Shell is too powerful** — `rm -rf /`, `curl | bash`, credential exfiltration
-- **Tools are untyped** — the model can pass any arguments
-- **No documentation** — the model guesses how tools work
-- **No isolation** — tools share the same process/permissions as the agent
+> How agents gain capabilities — from CLI tools to structured skill systems.
 
 ---
 
-## What Makes a Good Skill System
+## The Tool Landscape
 
-A skill system sits between the LLM and your infrastructure, providing capabilities that are:
+Infrastructure agents need access to real tools: `terraform`, `aws`, `az`, `gcloud`, `kubectl`, `helm`, `git`, `checkov`, `tflint`, and dozens more. The question isn't whether agents need tools — it's how to provide access safely.
 
-1. **Typed** — Inputs and outputs have schemas. The model can't pass arbitrary strings to shell commands.
-2. **Documented** — The agent understands what a skill does, when to use it, and what constraints apply — not just a function signature.
-3. **Scoped** — Different agents get different skills. A PR reviewer shouldn't have `terraform apply`.
-4. **Auditable** — Every skill invocation is logged with inputs, outputs, and context.
-5. **Isolated** — Skills can't access internals they shouldn't (database, other tenants' data, worker memory).
+There's a spectrum from raw shell access (maximum power, minimum safety) to structured skill systems (constrained power, maximum safety). Most production systems use a combination.
 
 ---
 
-## Approaches to Skill/Tool Registration
+## CLI Tools: The Foundation
 
-There are several ways to give agents capabilities. Each has tradeoffs:
+Every infrastructure agent ultimately needs to run CLI commands. The IaC ecosystem is built around CLIs — there's no Terraform API that replaces `terraform plan`, no Azure SDK that replaces everything `az` does. The agent's sandbox image is its tool inventory.
+
+### Essential CLI Tooling
+
+| Category | Tools | Purpose |
+|----------|-------|---------|
+| **IaC** | `terraform`, `tofu`, `pulumi`, `bicep` | Write, plan, validate infrastructure code |
+| **Cloud CLIs** | `aws`, `az`, `gcloud`, `oci` | Query resources, manage configurations |
+| **Kubernetes** | `kubectl`, `helm`, `kustomize` | Cluster operations, deployments |
+| **Git** | `git`, `gh`, `glab` | Version control, PR creation |
+| **Security** | `checkov`, `tflint`, `trivy`, `prowler` | Static analysis, compliance scanning |
+| **Utilities** | `jq`, `yq`, `curl`, `envsubst` | Data parsing, HTTP calls, templating |
+
+### Making CLI Access Safe
+
+Giving an agent unrestricted `bash` is the simplest approach and the most dangerous. Here's how to tighten it:
+
+**1. Allowlisted commands**: Only permit specific binaries. The agent can run `terraform plan` but not arbitrary `curl` or `bash -c`.
+
+**2. Credential injection via environment**: CLIs read credentials from environment variables. Inject short-lived tokens at runtime rather than baking anything into the image:
+
+```
+AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_SESSION_TOKEN  (STS)
+AZURE_CLIENT_ID + AZURE_CLIENT_SECRET + AZURE_TENANT_ID       (Service Principal)
+GOOGLE_APPLICATION_CREDENTIALS                                  (Service Account)
+GITHUB_TOKEN                                                    (Installation token)
+```
+
+See [Chapter 5: Credential Management](./05-credential-management.md) for the full credential broker pattern.
+
+**3. Version pinning**: Pin every tool to a specific version in the sandbox Dockerfile. A Terraform upgrade from 1.8 to 1.9 can change plan output format, break providers, or introduce new behaviors.
+
+**4. Machine-readable output**: CLI output is messy — progress bars, color codes, pagination, warnings mixed with data. Always prefer structured output:
+
+```bash
+terraform plan -json              # Structured JSON instead of human-readable
+terraform show -json              # JSON state output
+aws ... --output json             # JSON instead of table format
+az ... --output json              # JSON instead of table format
+kubectl get ... -o json           # JSON output
+checkov -o json                   # JSON findings
+```
+
+When JSON output isn't available, the model parses text — which works but is fragile across tool versions.
+
+**5. Typed CLI wrappers**: For high-risk or frequently-used commands, wrap the CLI in a typed function that validates inputs and parses outputs:
+
+```typescript
+interface PlanResult {
+  success: boolean;
+  resources: { address: string; action: 'create' | 'update' | 'delete' | 'no-op' }[];
+  error?: string;
+}
+
+async function terraformPlan(workDir: string): Promise<PlanResult> {
+  const { stdout, exitCode } = await exec(
+    'terraform plan -json -no-color',
+    { cwd: workDir }
+  );
+  return parsePlanJson(stdout);
+}
+```
+
+This is the bridge between raw CLI and structured capabilities — the agent calls a typed function, but under the hood it's running `terraform plan`.
+
+### CLI vs Structured Tools: When to Use Which
+
+| Use CLI Directly | Use Typed Wrappers / Skills |
+|------------------|---------------------------|
+| One-off queries (`aws s3 ls`) | Core agent loop operations (plan, validate, PR) |
+| Tool has good `-json` output | Output needs parsing or error classification |
+| Low-risk read-only commands | High-risk write operations |
+| Exploratory/debugging tasks | Repeated operations that must be reliable |
+
+---
+
+## Structured Capability Systems
+
+Beyond CLIs, there are several ways to give agents higher-level, safer capabilities. A good system provides:
+
+- **Documentation** — The agent understands what a capability does, when to use it, and what constraints apply
+- **Typing** — Inputs and outputs have schemas, not arbitrary strings
+- **Scoping** — Different agents get different capabilities. A PR reviewer shouldn't have `terraform apply`
+- **Auditability** — Every invocation is logged with inputs, outputs, and context
 
 ### 1. Skills as Files (Document-First)
 
@@ -136,18 +203,22 @@ const tools = [{
 
 | Approach | Documentation | Typing | Isolation | Ecosystem |
 |----------|--------------|--------|-----------|-----------|
+| **CLI tools** (direct) | Man pages / `--help` | None (strings) | Sandbox-level | Entire IaC ecosystem |
+| **Typed CLI wrappers** | Code comments | Strong | Sandbox-level | Build your own |
 | **Skills as files** | Rich (full markdown) | Via code | Per-file | Growing (Claude, community) |
 | **MCP** | Schema + description | Strong (Zod) | Per-server | Growing fast (vendor-backed) |
 | **LangChain tools** | Docstrings | Python types | None (same process) | Largest |
 | **Function calling** | Schema only | JSON Schema | Your responsibility | Universal |
 
-### Combining Approaches: Skills + MCP
+### Combining Approaches: Skills + MCP + CLIs
 
-Skills and MCP serve different roles: **skills define best practices and workflows; MCP connects to live data and tool APIs.** They compose well together.
+These approaches aren't mutually exclusive — they layer together:
 
-A skill's `SKILL.md` might say "when writing Terraform, follow these conventions, use these module patterns, validate with plan" — providing the *how*. An MCP server wired into the same agent provides live access to the Terraform Registry, workspace state, and module documentation — providing the *data*.
+- **CLIs** are the foundation. The agent runs `terraform`, `aws`, `git` in its sandbox. This is the raw capability layer.
+- **Skills** define *how* to use those CLIs well. A skill says "when writing Terraform, follow these conventions, validate with plan, max 10 iterations." It's the best-practices layer.
+- **MCP** connects to *live data and APIs*. An MCP server gives the agent access to the Terraform Registry, workspace state, or cloud resource inventory. It's the data layer.
 
-HashiCorp's Claude plugin demonstrates this: it bundles skills for Terraform code generation alongside a Docker-run MCP server that gives the agent live access to the Terraform Registry and Terraform Cloud APIs.
+HashiCorp's Claude plugin demonstrates all three: CLI tools installed in the environment, skills for Terraform code generation patterns, and an MCP server for live Terraform Registry and Cloud API access.
 
 ---
 
