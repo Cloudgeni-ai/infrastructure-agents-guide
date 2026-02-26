@@ -1,6 +1,6 @@
 # Chapter 5: Credential Management
 
-> Short-lived tokens, vault patterns, and blast radius control.
+> Short-lived tokens, task-scoped access, vault patterns, and blast radius control.
 
 ---
 
@@ -217,6 +217,82 @@ async function handleGetCredentials(req: Request): Promise<Response> {
 
 ---
 
+## Task-Scoped Credentials: Let Agents Run Freely
+
+The hardest part of deploying infrastructure agents isn't the technology — it's trust. Teams hesitate to let agents run autonomously because a single over-privileged credential can cause real damage. The fix isn't more approval gates. It's **scoping credentials so tightly that the agent can't cause damage even if it tries**.
+
+When an agent has read-only access to your AWS account and write access only to a single Terraform file in one repository, you can let it run freely. There's nothing dangerous it *can* do. This changes the conversation from "should we let the agent do this?" to "the agent can do whatever it needs within these bounds."
+
+### Default to Read-Only
+
+Every agent task should start with the minimum credential scope. Most agent operations are read-heavy:
+
+| Task Type | What the Agent Actually Needs | Credential Scope |
+|-----------|------------------------------|-----------------|
+| Compliance scan | List resources, read configurations | **Read-only** cloud access |
+| Drift detection | Run `terraform plan` (reads state, compares) | **Read-only** cloud + read state |
+| Code analysis | Read repository files, check syntax | **Git read** only |
+| Cost analysis | Query billing APIs, describe resources | **Read-only** billing + describe |
+| Remediation | Write Terraform files, create branch, open PR | **Git write** + read-only cloud |
+| Live remediation | All of the above + `terraform apply` | **Write** cloud (rare, gated) |
+
+Notice that even remediation — fixing a compliance finding — typically only needs **git write** permissions. The agent edits code and opens a PR. It doesn't need cloud write access because CI/CD handles the apply. This is the safest and most common pattern.
+
+### Make Scope Selection Easy
+
+The system should make it trivial for admins to configure and for agents to request the right scope. Pre-define named scopes that map to cloud provider permissions:
+
+```
+SCOPES:
+  read-only:
+    AWS:   arn:aws:iam::*:role/agent-readonly    (Describe*, List*, Get*)
+    Azure: Reader role on subscription
+    GCP:   roles/viewer on project
+
+  terraform-plan:
+    AWS:   arn:aws:iam::*:role/agent-plan         (ReadOnly + state access)
+    Azure: Reader + Terraform state storage access
+    GCP:   roles/viewer + storage.objects.get (for state)
+
+  git-write:
+    GitHub: Contents (write), Pull Requests (write), limited to specific repos
+    GitLab: Developer role on specific projects
+
+  cloud-write:
+    AWS:   arn:aws:iam::*:role/agent-apply         (scoped to specific services)
+    Azure: Contributor on specific resource groups
+    GCP:   roles/editor on specific projects
+    ⚠️  Requires approval gate — never issued automatically
+```
+
+Each agent type maps to a default scope. A compliance scanner gets `read-only`. A remediation agent gets `read-only` cloud + `git-write`. An admin can override per-task, but the defaults are safe.
+
+### Easy Credential Swapping
+
+Agents often need credentials from multiple systems during a single task — cloud read access to understand the current state, git write access to push a fix, and maybe a different cloud account's read access to compare configurations.
+
+The credential broker should make swapping between scopes seamless:
+
+1. **Agent requests credentials by intent, not by raw IAM policy.** It asks for "read-only access to the production AWS account" — not for a specific role ARN. The broker maps intent to the right credential.
+
+2. **Multiple credentials in one session.** The agent can hold a read-only cloud token *and* a git write token simultaneously. Each is scoped independently. Revoking one doesn't affect the other.
+
+3. **Scope escalation is explicit.** If a task starts as read-only analysis but the agent decides it needs write access to fix something, it requests an escalation. The broker can require human approval for the upgrade without interrupting the read-only work already done.
+
+4. **Credentials are swappable across cloud providers.** A multi-cloud agent working across AWS and Azure gets separate tokens for each, each with its own scope and expiry. The agent doesn't manage credentials — it just requests access by provider and intent.
+
+### Why This Matters
+
+When credentials are properly scoped:
+- **Agents run autonomously without fear.** A read-only agent can analyze your entire infrastructure and the worst it can do is waste tokens.
+- **Users trust the system.** They see that the compliance scanner *literally cannot* modify resources — it's not a policy that might be bypassed, it's a credential that doesn't have write permissions.
+- **Blast radius is bounded.** Even if the agent is compromised via prompt injection, the token it holds can only do what its scope allows. A read-only token is useless for an attacker who wants to modify infrastructure.
+- **Audit is meaningful.** Each credential issuance logs the scope, so you can see exactly what level of access each agent session had — not just that it *could* have done something, but what it was *authorized* to do.
+
+The goal: **an admin configures scopes once, agents request credentials by intent, and the system guarantees that no agent ever gets more access than its task requires.**
+
+---
+
 ## Secret Storage Alternatives
 
 ### HashiCorp Vault
@@ -283,14 +359,18 @@ const item = await response.json();
 ```
 [ ] Long-lived credentials ONLY in API server / vault — never in workers
 [ ] Short-lived tokens (1h max) for all agent operations
-[ ] Scope tokens to minimum required permissions
+[ ] Default scope is read-only — write access requires explicit configuration
+[ ] Named scopes defined per cloud provider (read-only, plan, git-write, cloud-write)
+[ ] Each agent type mapped to a default scope — overrides require admin action
+[ ] Scope tokens to minimum required permissions (inline policy / session tags)
 [ ] Validate integration ownership before issuing tokens
-[ ] Log every credential issuance with correlation ID
+[ ] Log every credential issuance with scope and correlation ID
 [ ] Block cloud metadata endpoints in sandbox (169.254.169.254)
 [ ] Encrypt credentials at rest in the database
 [ ] Rotate refresh tokens on a schedule
 [ ] Credential requests fail closed (deny on error)
 [ ] No credentials in agent prompts, logs, or error messages
+[ ] Scope escalation (read → write) requires human approval
 ```
 
 ---
