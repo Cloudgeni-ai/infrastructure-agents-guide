@@ -26,7 +26,7 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 | # | Chapter | What You'll Learn |
 |---|---------|-------------------|
 | 1 | [Architecture Overview](./01-architecture.md) | The six planes of an infra-agent system |
-| 2 | [Agent Runtime & Orchestration](./02-agent-runtime.md) | Task queuing, worker isolation, consumer groups |
+| 2 | [Agent Runtime & Orchestration](./02-agent-runtime.md) | LLM runtimes (Claude Agent SDK, OpenAI, LangChain, custom), task queuing, worker isolation |
 | 3 | [Tools, CLIs & Skills](./03-tools-skills.md) | CLI tooling, skill systems, MCP, and capability management |
 | 4 | [Sandboxed Execution](./04-sandboxed-execution.md) | Container isolation with Docker, Modal, Azure Container Apps |
 | 5 | [Credential Management](./05-credential-management.md) | Short-lived tokens, vault patterns, blast radius control |
@@ -90,7 +90,7 @@ This guide doesn't prescribe a single stack. For each architectural layer, we co
 
 | Layer | Options Covered |
 |-------|----------------|
-| **LLM Runtime** | Claude Code SDK, OpenAI Assistants, LangChain/LangGraph, direct API |
+| **LLM Runtime** | Claude Agent SDK, OpenAI Agents SDK / Codex CLI, LangChain/LangGraph, direct API |
 | **Task Queue** | Redis Streams, BullMQ, AWS SQS, RabbitMQ, Temporal |
 | **Sandboxing** | Docker, Modal, Azure Container Apps Jobs, AWS Lambda, Firecracker |
 | **Credential Store** | HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, 1Password |

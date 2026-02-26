@@ -1,6 +1,6 @@
 # Chapter 2: Agent Runtime & Orchestration
 
-> How to execute agents reliably: task queuing, worker isolation, consumer groups, and recovery.
+> Choosing an LLM runtime, task queuing, worker isolation, consumer groups, and recovery.
 
 ---
 
@@ -13,6 +13,216 @@ An infrastructure agent isn't a simple request-response API call. It's a **long-
 - Must survive worker crashes and restarts
 - May need to pause and resume (human-in-the-loop)
 - Must not interfere with other concurrent agents
+
+This chapter covers two layers: the **agent runtime** (what drives the LLM loop inside the worker) and the **orchestration layer** (how tasks get dispatched, queued, and recovered).
+
+---
+
+## Choosing an Agent Runtime
+
+The agent runtime is the inner loop that drives everything:
+
+```
+prompt → LLM → tool_use → execute tool → result → LLM → tool_use → ... → final answer
+```
+
+This loop needs to handle tool registration, token counting, error recovery, multi-turn context, and stopping conditions. You can build it yourself or use a framework that manages it for you.
+
+### Option 1: Anthropic Claude Agent SDK
+
+The [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) (`@anthropic-ai/claude-agent-sdk`) is Anthropic's official runtime for building agents on Claude. It's the same engine that powers Claude Code. Available in TypeScript and Python.
+
+The SDK manages the full agentic loop: Claude reasons, calls tools, reads results, and continues until the task is done. You control which tools are available, set budget limits, and stream events in real-time.
+
+```typescript
+import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+
+// Define a custom tool
+const runTerraformPlan = tool(
+  "terraform_plan",
+  "Run terraform plan in the given directory",
+  { workDir: z.string().describe("Working directory path") },
+  async ({ workDir }) => {
+    const result = await exec("terraform plan -json -no-color", { cwd: workDir });
+    return { content: [{ type: "text", text: result.stdout }] };
+  }
+);
+
+// Create an in-process MCP server for custom tools
+const infraTools = createSdkMcpServer({
+  name: "infra-tools",
+  tools: [runTerraformPlan],
+});
+
+// Run the agent — the SDK handles the full loop
+for await (const message of query({
+  prompt: "Fix the unencrypted S3 bucket in modules/storage/main.tf",
+  options: {
+    systemPrompt: hardRules + policyDigest,
+    allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+    mcpServers: { "infra-tools": infraTools },
+    maxTurns: 50,
+    permissionMode: "bypassPermissions",
+    cwd: "/workspace/infra-repo",
+  },
+})) {
+  if (message.type === "result" && message.subtype === "success") {
+    console.log("Agent completed:", message.result);
+  }
+}
+```
+
+**Key features**: Built-in file and shell tools, MCP server support, subagent delegation (`Task` tool), session resume via `session_id`, cost budgets (`maxBudgetUsd`), and lifecycle hooks for pre/post tool-use validation.
+
+### Option 2: OpenAI Codex CLI / Agents SDK
+
+OpenAI offers two levels for building agents:
+
+**Codex CLI** ([github.com/openai/codex](https://github.com/openai/codex)) is an open-source terminal agent (Rust, Apache-2.0) that reads, modifies, and executes code locally. It uses the Responses API under the hood with platform-specific sandboxing (Seatbelt on macOS, Landlock on Linux).
+
+**Agents SDK** ([github.com/openai/openai-agents-python](https://github.com/openai/openai-agents-python)) is the Python framework for building custom agents with tool calling, multi-agent handoffs, and built-in tracing.
+
+```python
+from agents import Agent, Runner, function_tool
+
+@function_tool
+def terraform_plan(work_dir: str) -> str:
+    """Run terraform plan and return the result."""
+    result = subprocess.run(
+        ["terraform", "plan", "-json", "-no-color"],
+        cwd=work_dir, capture_output=True, text=True,
+    )
+    return result.stdout
+
+agent = Agent(
+    name="Remediation Agent",
+    instructions="Fix compliance findings by editing Terraform files.",
+    tools=[terraform_plan],
+)
+
+result = await Runner.run(agent, input="Fix the unencrypted S3 bucket")
+print(result.final_output)
+```
+
+**Raw Responses API**: For maximum control, call `client.responses.create()` directly. The `previous_response_id` parameter maintains reasoning state across turns without resending the full conversation history.
+
+### Option 3: LangChain / LangGraph
+
+The Python ecosystem's most popular agent frameworks. [LangChain](https://github.com/langchain-ai/langchain) provides a simple ReAct agent loop. [LangGraph](https://github.com/langchain-ai/langgraph) adds stateful graphs with conditional routing — useful for complex multi-step workflows like "scan → triage → remediate → validate → PR."
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain.tools import tool
+from langgraph.prebuilt import create_react_agent
+
+@tool
+def terraform_plan(work_dir: str) -> str:
+    """Run terraform plan and return the result."""
+    result = subprocess.run(
+        ["terraform", "plan", "-json"],
+        cwd=work_dir, capture_output=True, text=True,
+    )
+    return result.stdout
+
+llm = ChatAnthropic(model="claude-sonnet-4-20250514")
+agent = create_react_agent(llm, [terraform_plan])
+
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Fix the S3 encryption finding"}]
+})
+```
+
+**Pros**: Works with any LLM provider (swap `ChatAnthropic` for `ChatOpenAI`), large ecosystem of pre-built tools, LangGraph supports checkpointing and human-in-the-loop natively.
+**Cons**: Heavy abstraction layers, Python-only, debugging through the chain can be opaque.
+
+### Option 4: Direct API Wrapper (Build Your Own)
+
+Use the raw Anthropic or OpenAI API and write the loop yourself. Maximum control, minimum abstraction. Choose this when you need custom retry logic, token budgeting, non-standard tool execution, or want to avoid framework dependencies.
+
+```typescript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+
+async function runAgentLoop(
+  prompt: string,
+  tools: Anthropic.Tool[],
+  executeToolCall: (name: string, input: unknown) => Promise<string>,
+  maxTurns: number = 50,
+): Promise<string> {
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
+
+  for (let turn = 0; turn < maxTurns; turn++) {
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 8192,
+      tools,
+      messages,
+    });
+
+    // Collect text and tool use blocks
+    messages.push({ role: "assistant", content: response.content });
+
+    if (response.stop_reason === "end_turn") {
+      // Agent is done — extract final text
+      const text = response.content.find(b => b.type === "text");
+      return text?.text ?? "";
+    }
+
+    // Execute tool calls and feed results back
+    const toolResults = [];
+    for (const block of response.content) {
+      if (block.type === "tool_use") {
+        const result = await executeToolCall(block.name, block.input);
+        toolResults.push({
+          type: "tool_result" as const,
+          tool_use_id: block.id,
+          content: result,
+        });
+      }
+    }
+    messages.push({ role: "user", content: toolResults });
+  }
+
+  throw new Error("Agent exceeded max turns");
+}
+```
+
+This is ~30 lines for the core loop. You add tool definitions, error handling, token tracking, and streaming on top.
+
+### Comparison
+
+| | Claude Agent SDK | OpenAI Agents SDK | LangChain/LangGraph | Direct API Wrapper |
+|---|---|---|---|---|
+| **Language** | TypeScript, Python | Python (JS planned) | Python | Any |
+| **LLM lock-in** | Claude only | OpenAI only | Any provider | Any provider |
+| **Built-in tools** | File, shell, web, glob, grep | Shell (Codex CLI) | Community ecosystem | None (you build) |
+| **Tool system** | MCP + custom tools | Function calling + MCP | Decorators + schemas | JSON schema |
+| **Session mgmt** | Built-in (resume by ID) | `previous_response_id` | LangGraph checkpoints | You build |
+| **Subagents** | Native (`Task` tool) | Handoffs | LangGraph subgraphs | You build |
+| **Complexity** | Low | Low-Medium | Medium-High | High (but simple) |
+| **Best for** | Claude-based agents, fast setup | OpenAI-based agents | Multi-provider, complex graphs | Custom requirements, no deps |
+
+### Which One Should You Choose?
+
+- **Claude Agent SDK** if you're building on Claude and want the fastest path to a working agent with built-in file/shell tools, MCP support, and session management.
+- **OpenAI Agents SDK** if you're building on GPT models and want similar convenience with multi-agent handoffs.
+- **LangChain/LangGraph** if you need provider flexibility (swap models without rewriting), have complex multi-step workflows, or want the largest ecosystem of pre-built integrations.
+- **Direct API wrapper** if you need maximum control, want to avoid framework dependencies, or have non-standard execution requirements (custom sandboxing, exotic tool patterns, tight token budgets).
+
+All four produce the same output: a loop that drives an LLM through tool calls until a task is complete. The differences are in abstraction level, ecosystem, and which LLM providers you can use.
+
+---
+
+## How the Runtime Connects to Orchestration
+
+The agent runtime runs **inside** the worker. The rest of this chapter covers the orchestration layer — how tasks get dispatched to workers, how workers survive crashes, and how output streams back to users. Think of it as two nested loops:
+
+```
+Outer loop (orchestration): Queue → Worker claims task → Worker runs → ACK
+  Inner loop (runtime):     Prompt → LLM → Tool call → Execute → Result → LLM → ... → Done
+```
 
 ---
 
