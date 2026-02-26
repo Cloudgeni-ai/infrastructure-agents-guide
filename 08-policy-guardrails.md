@@ -201,11 +201,11 @@ The key requirement: policies must be **versioned** (so you can diff what change
 Here's the insight most teams miss: prompt-level policies don't have to stay soft. An agent that understands a natural-language policy can *generate* the enforceable policy code to make it structural.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  POLICY GENERATION PIPELINE                                      │
+┌───────────────────────────────────────────────────────────────────┐
+│  POLICY GENERATION PIPELINE                                       │
 │                                                                   │
 │  Admin writes:                                                    │
-│  "All S3 buckets must have server-side encryption (SSE-KMS)"     │
+│  "All S3 buckets must have server-side encryption (SSE-KMS)"      │
 │                                                                   │
 │         │                                                         │
 │         ▼                                                         │
@@ -216,8 +216,8 @@ Here's the insight most teams miss: prompt-level policies don't have to stay sof
 │    ┌────┴─────────────────────────────────────────┐               │
 │    │              │               │               │               │
 │    ▼              ▼               ▼               ▼               │
-│  Terraform     Azure Policy   AWS SCP /       OPA Rego /         │
-│  resource      definition     Config Rule     Sentinel           │
+│  Terraform     Azure Policy   AWS SCP /       OPA Rego /          │
+│  resource      definition     Config Rule     Sentinel            │
 │  validation                                                       │
 │    │              │               │               │               │
 │    └────┬─────────┴───────────────┴───────┬───────┘               │
@@ -226,7 +226,7 @@ Here's the insight most teams miss: prompt-level policies don't have to stay sof
 │    (IaC change)                    enforcement                    │
 │                                    (blocks non-compliant          │
 │                                     deploys at the API level)     │
-└─────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 This closes the loop: a human writes policy in plain language → the agent understands it → the agent generates enforceable policy code → the code goes through a PR → once merged, it becomes a structural guardrail that applies to *everyone*, not just the agent.
@@ -398,20 +398,20 @@ Agent generates changes
         │
         ▼
 ┌─────────────────────────┐
-│  terraform plan          │──── Does the plan match expectations?
-│  terraform validate      │     Any resource deletions?
+│  terraform plan         │──── Does the plan match expectations?
+│  terraform validate     │     Any resource deletions?
 └───────────┬─────────────┘     Any permission changes?
             │
             ▼
 ┌─────────────────────────┐
-│  Policy-as-code check    │──── OPA/Rego, Sentinel, Checkov,
-│  (against the plan)      │     tfsec, Trivy, custom rules
+│  Policy-as-code check   │──── OPA/Rego, Sentinel, Checkov,
+│  (against the plan)     │     tfsec, Trivy, custom rules
 └───────────┬─────────────┘
             │
             ▼
 ┌─────────────────────────┐
-│  Diff review             │──── Does the diff contain secrets?
-│  (against the code)      │     Does it modify files outside scope?
+│  Diff review            │──── Does the diff contain secrets?
+│  (against the code)     │     Does it modify files outside scope?
 └───────────┬─────────────┘     Does it exceed max lines changed?
             │
         ┌───┴───┐
