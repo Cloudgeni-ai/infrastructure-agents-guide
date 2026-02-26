@@ -35,12 +35,12 @@ The fix: don't make agents discover what you already know. Build a data plane th
 Infrastructure agents don't just need cloud resource lists. They need layered context that spans multiple systems:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    CONTEXT LAYERS                         │
+┌──────────────────────────────────────────────────────────┐
+│                    CONTEXT LAYERS                        │
 │                                                          │
 │  Layer 1: Cloud Resources                                │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │ What exists? EC2, S3, VPC, VNet, GKE, ...         │  │
+│  │ What exists? EC2, S3, VPC, VNet, GKE, ...          │  │
 │  │ What state is it in? Config, tags, status          │  │
 │  │ How do resources relate? VPC→Subnet→Instance       │  │
 │  └────────────────────────────────────────────────────┘  │
@@ -71,7 +71,7 @@ Infrastructure agents don't just need cloud resource lists. They need layered co
 │  │ What are the naming conventions?                   │  │
 │  │ Are there ADRs, runbooks, past incidents?          │  │
 │  └────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────┘
 ```
 
 The agent that has all five layers can go from "fix the unencrypted bucket" to "here's a PR that adds SSE-KMS to `aws_s3_bucket.prod_logs` in `modules/storage/main.tf`, using the existing KMS key from the same account, following the Payments team's encryption standard" — in seconds.
