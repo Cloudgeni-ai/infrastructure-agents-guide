@@ -56,8 +56,8 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 ```
 ┌───────────────────────────────────────────────────────────┐
 │                    YOUR INFRASTRUCTURE                    │
-│  AWS / Azure / GCP / OCI    Terraform / Bicep / Pulumi   │
-│  GitHub / GitLab / ADO      Prowler / Checkov / Custom   │
+│  AWS / Azure / GCP / OCI    Terraform / Bicep / Pulumi    │
+│  GitHub / GitLab / ADO      Prowler / Checkov / Custom    │
 └────────────────────────────┬──────────────────────────────┘
                              │
                   ┌──────────▼──────────┐
