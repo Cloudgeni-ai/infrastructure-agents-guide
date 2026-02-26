@@ -191,27 +191,65 @@ async function runAgentLoop(
 
 This is ~30 lines for the core loop. You add tool definitions, error handling, token tracking, and streaming on top.
 
+### Option 5: Open-Source Agent Frameworks
+
+Beyond the vendor SDKs, a growing ecosystem of open-source frameworks handles the agentic loop for you — most are LLM-provider-agnostic, so you can swap models without rewriting your agent.
+
+#### Python Frameworks
+
+| Framework | Stars | Key Differentiator | Best For |
+|-----------|-------|-------------------|----------|
+| [**CrewAI**](https://github.com/crewAIInc/crewAI) | ~57K | Role-based multi-agent crews with deterministic Flows orchestration | Multi-agent collaboration (scan agent → triage agent → remediation agent) |
+| [**Pydantic AI**](https://github.com/pydantic/pydantic-ai) | ~15K | Type-safe, Pydantic-validated structured outputs. "FastAPI for agents" | Infrastructure agents where validated, typed outputs matter |
+| [**Smolagents**](https://github.com/huggingface/smolagents) (HF) | ~26K | Agents write executable Python code instead of JSON tool calls. ~1K LOC core | Lightweight agents, code-generation-first workflows |
+| [**Haystack**](https://github.com/deepset-ai/haystack) (deepset) | ~22K | Pipeline-as-graph architecture, YAML-serializable, K8s-ready | RAG + agent pipelines, production search/retrieval workflows |
+| [**Google ADK**](https://github.com/google/adk-python) | ~16K | Google-backed, optimized for Gemini but model-agnostic | GCP-native teams, multi-language (Python/Go/TS) |
+| [**Strands Agents**](https://github.com/strands-agents/sdk-python) (AWS) | ~10K | AWS-backed, model-driven approach, 14M+ downloads | AWS-native teams, Bedrock integration |
+
+**Note on AutoGen**: Microsoft's [AutoGen](https://github.com/microsoft/autogen) (~55K stars) pioneered multi-agent conversations but is now in **maintenance mode**. New development moved to the Microsoft Agent Framework (Semantic Kernel). The community fork [AG2](https://github.com/ag2ai/ag2) continues active development.
+
+#### TypeScript Frameworks
+
+| Framework | Stars | Key Differentiator | Best For |
+|-----------|-------|-------------------|----------|
+| [**Mastra**](https://github.com/mastra-ai/mastra) | ~20K | Full-stack TS agent framework with built-in RAG, memory, MCP, evals. 81+ providers | Complete TypeScript agent platform |
+| [**Vercel AI SDK**](https://github.com/vercel/ai) | ~22K | Streaming-first, React/Next.js native. 20M+ monthly npm downloads | Web-facing agents, streaming UI, Next.js apps |
+
+#### How They Handle the Agentic Loop
+
+All of these implement the same core pattern — LLM → tool call → execute → result → LLM — but with different flavors:
+
+- **CrewAI** adds a layer above the loop: you define agent *roles* and *goals*, then the framework orchestrates multi-agent collaboration with deterministic Flows controlling step ordering.
+- **Pydantic AI** emphasizes type safety: every tool input and agent output is Pydantic-validated. The `@agent.tool` decorator gives tools access to agent context (dependencies, retries).
+- **Smolagents** takes a different approach entirely: instead of JSON tool calls, the agent writes executable Python code. This means it can compose tools, use loops, and conditionals naturally — interesting for infrastructure tasks that involve scripting.
+- **Mastra** provides a unified `"provider/model-name"` string across 2,400+ models, with built-in MCP server support, memory management, and workflow orchestration.
+- **Vercel AI SDK** uses `generateText`/`streamText` with a step limit. It streams tool calls and intermediate results to the UI in real time — unique for user-facing agent interfaces.
+
 ### Comparison
 
-| | Claude Agent SDK | OpenAI Agents SDK | LangChain/LangGraph | Direct API Wrapper |
-|---|---|---|---|---|
-| **Language** | TypeScript, Python | Python (JS planned) | Python | Any |
-| **LLM lock-in** | Claude only | OpenAI only | Any provider | Any provider |
-| **Built-in tools** | File, shell, web, glob, grep | Shell (Codex CLI) | Community ecosystem | None (you build) |
-| **Tool system** | MCP + custom tools | Function calling + MCP | Decorators + schemas | JSON schema |
-| **Session mgmt** | Built-in (resume by ID) | `previous_response_id` | LangGraph checkpoints | You build |
-| **Subagents** | Native (`Task` tool) | Handoffs | LangGraph subgraphs | You build |
-| **Complexity** | Low | Low-Medium | Medium-High | High (but simple) |
-| **Best for** | Claude-based agents, fast setup | OpenAI-based agents | Multi-provider, complex graphs | Custom requirements, no deps |
+| | Language | LLM Lock-in | Tool System | Session Mgmt | Multi-Agent | Complexity |
+|---|---|---|---|---|---|---|
+| **Claude Agent SDK** | TS, Python | Claude | MCP + built-in tools | Resume by ID | Subagents | Low |
+| **OpenAI Agents SDK** | Python | OpenAI | Function calling + MCP | `previous_response_id` | Handoffs | Low |
+| **LangChain/LangGraph** | Python | Any | Decorators + schemas | Checkpoints | Subgraphs | Medium-High |
+| **CrewAI** | Python | Any | Decorators + custom | Flows state | Role-based crews | Medium |
+| **Pydantic AI** | Python | Any | Typed decorators | You build | You build | Low-Medium |
+| **Smolagents** | Python | Any | Code-as-action | You build | Multi-agent | Low |
+| **Mastra** | TypeScript | Any (81+ providers) | MCP + custom | Built-in memory | Workflows | Medium |
+| **Vercel AI SDK** | TypeScript | Any | JSON schema | You build | You build | Low-Medium |
+| **Direct API** | Any | Any | JSON schema | You build | You build | High (but simple) |
 
 ### Which One Should You Choose?
 
 - **Claude Agent SDK** if you're building on Claude and want the fastest path to a working agent with built-in file/shell tools, MCP support, and session management.
 - **OpenAI Agents SDK** if you're building on GPT models and want similar convenience with multi-agent handoffs.
-- **LangChain/LangGraph** if you need provider flexibility (swap models without rewriting), have complex multi-step workflows, or want the largest ecosystem of pre-built integrations.
-- **Direct API wrapper** if you need maximum control, want to avoid framework dependencies, or have non-standard execution requirements (custom sandboxing, exotic tool patterns, tight token budgets).
+- **LangChain/LangGraph** if you need provider flexibility, have complex multi-step workflows with conditional routing, or want the largest ecosystem of pre-built integrations.
+- **CrewAI** if your architecture is multi-agent (e.g., a scanning agent hands off to a remediation agent, which hands off to a review agent) and you want role-based orchestration.
+- **Pydantic AI** if you want type-safe, validated outputs with minimal framework overhead — especially good for infrastructure agents where structured data matters.
+- **Mastra** or **Vercel AI SDK** if you're building in TypeScript and want a provider-agnostic framework with MCP support.
+- **Direct API wrapper** if you need maximum control, want to avoid framework dependencies, or have non-standard execution requirements.
 
-All four produce the same output: a loop that drives an LLM through tool calls until a task is complete. The differences are in abstraction level, ecosystem, and which LLM providers you can use.
+All of these produce the same output: a loop that drives an LLM through tool calls until a task is complete. The differences are in abstraction level, ecosystem, and which LLM providers you can use.
 
 ---
 
