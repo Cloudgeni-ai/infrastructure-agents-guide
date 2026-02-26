@@ -352,6 +352,165 @@ The agent receives structured, pre-formatted responses. No raw CLI output, no pa
 
 ---
 
+## How Agents Consume Data: From Context Injection to RAG
+
+You've collected, correlated, and serialized your infrastructure data. The remaining question: **how does it actually get into the agent's context?** There's a spectrum of approaches, and the right choice depends on data volume and query predictability.
+
+### Level 1: Direct Context Injection (Small Data, Known Queries)
+
+For focused tasks where you know what the agent needs upfront, just put the data in the prompt. No retrieval system needed.
+
+```
+System prompt:
+  "You are a compliance remediation agent."
+
+Injected context:
+  ## Finding
+  S3 bucket `prod-logs` missing server-side encryption.
+  Severity: HIGH | Framework: CIS AWS v3.0 | Control: 2.1.1
+
+  ## Affected Resource
+  - Type: AWS_S3_BUCKET
+  - Region: us-east-1
+  - IaC: `aws_s3_bucket.prod_logs` in modules/storage/main.tf
+
+  ## Related Resources
+  - KMS Key `alias/infra-key` exists in same account (arn:aws:kms:us-east-1:...)
+  - Bucket policy attached, no public access
+
+  ## Organization Policies
+  - All S3 buckets MUST use SSE-KMS with alias/infra-key
+  - Never disable encryption, even temporarily
+
+User prompt:
+  "Fix this finding."
+```
+
+This works when:
+- The data fits comfortably in context (~2,000-10,000 tokens of context)
+- You can predict what the agent needs before it starts
+- The task is scoped to a single resource or a small set of resources
+
+For a compliance remediation agent, this covers 80%+ of tasks. The system pre-fetches the finding, the affected resource, related resources from the graph, the IaC location, and relevant policies — and injects all of it before the agent writes a single line of code.
+
+**This is where most infrastructure agents should start.** If you can solve the problem with direct injection, you don't need search or RAG.
+
+### Level 2: Filtered Database Queries (Medium Data, Structured Queries)
+
+When the agent needs to explore beyond what was pre-injected — browsing multiple resources, comparing across accounts, or filtering by dimensions it decides at runtime — give it query tools backed by your database.
+
+These are the typed API patterns from the previous section: `queryResources`, `queryFindings`, `queryResourceGraph`. The agent specifies filters (provider, resource type, region, severity, tags) and gets back pre-serialized results.
+
+This works when:
+- The agent needs to search across hundreds or thousands of resources
+- Queries are structured — filtering by known dimensions, not free-text
+- The data is in your database with indexed columns
+
+For infrastructure data (Layers 1-4: resources, IaC, compliance, cost), filtered queries are almost always sufficient. You're searching by resource type, region, severity, tag values — not by semantic meaning. A SQL `WHERE` clause beats vector search for these queries.
+
+### Level 3: Full-Text Search (Semi-Structured Data)
+
+For organizational knowledge — ADRs, runbooks, wiki pages, module docs, past incident reports — the agent can't filter by structured dimensions because the data is text. Full-text search with keyword matching handles this.
+
+```
+Agent asks: "How did we handle VPC isolation for the payments team?"
+
+Full-text search tool searches across:
+  - ADRs in git repos
+  - Wiki pages (Confluence, Notion)
+  - Past agent session summaries
+  - README files in infrastructure repos
+
+Returns: Top 5 results ranked by relevance, with snippets.
+```
+
+PostgreSQL `tsvector` + `ts_rank`, Elasticsearch, or Meilisearch all work here. The queries are keyword-based ("VPC isolation payments"), and the corpus is typically small enough (hundreds to low thousands of documents) that basic full-text search finds the right results.
+
+This works when:
+- The corpus is small to medium (< 50K documents)
+- Queries contain specific keywords that appear in the target documents
+- Infrastructure vocabulary is precise enough for keyword matching (resource names, service names, team names)
+
+### Level 4: RAG — Retrieval-Augmented Generation (Large Data, Semantic Queries)
+
+RAG adds a vector search layer: documents are chunked, embedded into vectors, stored in a vector database, and retrieved by semantic similarity at query time. The retrieved chunks are injected into the agent's context alongside the user's prompt.
+
+```
+┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+│  User    │────▶│  Embed   │────▶│  Vector  │────▶│  Top-K   │
+│  Query   │     │  Query   │     │  Search  │     │  Results  │
+└──────────┘     └──────────┘     └──────────┘     └──────────┘
+                                                        │
+                                                        ▼
+                                                   ┌──────────┐
+                                                   │  Inject   │
+                                                   │  into     │
+                                                   │  Prompt   │
+                                                   └──────────┘
+```
+
+Use RAG when:
+- **Large documentation corpus** — thousands of wiki pages, hundreds of runbooks, years of incident reports
+- **Semantic queries** — the agent asks questions where the answer uses different words than the query ("What's our policy on public-facing storage?" should find a doc about "S3 bucket ACLs")
+- **Cross-domain knowledge** — the agent needs to connect information from different sources (an ADR, a past incident, and a naming convention doc)
+
+**Don't use RAG when:**
+- You're searching structured infrastructure data — use filtered queries instead
+- Your corpus is small (< 1K documents) — full-text search is simpler and often more accurate
+- Queries contain specific identifiers (ARNs, resource names, finding IDs) — keyword search is better for exact matches
+
+Common RAG pitfalls for infrastructure data:
+- **Chunking infrastructure docs poorly** — a Terraform module doc chunked mid-resource-block produces garbage context
+- **Embedding infrastructure jargon** — generic embedding models may not distinguish "NSG" from "security group" from "firewall rule"
+- **Over-indexing** — embedding every cloud API response creates noise. Only embed documents that contain organizational knowledge, not raw resource data
+
+#### Vector Database Options
+
+| Option | When to Use |
+|--------|------------|
+| **pgvector** (PostgreSQL extension) | Start here if you already use PostgreSQL. No new infrastructure. Handles millions of vectors. |
+| **Pinecone / Weaviate / Qdrant** | Dedicated vector DBs when you need advanced features (hybrid search, filtering, multi-tenancy) at scale |
+| **In-memory** (FAISS, HNSWlib) | Prototyping, small corpora (< 100K vectors), or when you want zero infrastructure |
+
+### Level 5: MCP Resources (Browsable Data)
+
+MCP (Model Context Protocol) supports a `resources` primitive — the agent can browse a list of available data sources and read specific ones on demand. This is useful for exposing structured data that the agent may or may not need.
+
+```
+MCP server exposes:
+  resource://cloud/aws/us-east-1/s3-buckets       → list of all S3 buckets
+  resource://compliance/findings/high              → all HIGH severity findings
+  resource://docs/adrs/vpc-isolation               → specific ADR document
+  resource://policies/encryption                   → encryption policy
+
+Agent browses the resource list, reads what it needs.
+```
+
+This works as a complement to the other levels — MCP resources give the agent self-service access to data it might need, without pre-injecting everything.
+
+### Choosing the Right Level
+
+```
+"Fix this specific S3 encryption finding"
+  → Level 1: Direct injection. You know exactly what context is needed.
+
+"Show me all unencrypted S3 buckets across our AWS accounts"
+  → Level 2: Filtered query. Structured search by resource type + property.
+
+"How did we handle encryption for the payments team last quarter?"
+  → Level 3: Full-text search. Keyword search across ADRs and past sessions.
+
+"What are the best practices for encrypting data at rest in our org?"
+  → Level 4: RAG. Semantic search across docs, policies, and past decisions.
+
+"I need to understand this infrastructure before making changes"
+  → Level 5: MCP resources. Agent browses available data and pulls what it needs.
+```
+
+In practice, most infrastructure agents combine Levels 1 + 2: pre-inject the known context, give the agent query tools for the rest. Add Level 3 when agents need organizational knowledge. Add Level 4 only when full-text search fails to find semantically related documents at scale.
+
+---
+
 ## Tools and Alternatives
 
 ### Asset Inventory (Layer 1: What exists?)
