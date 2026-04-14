@@ -122,6 +122,10 @@ function executeToolCall(toolName: string, args: any, agentType: string): Result
 
 The deny list always wins. If a tool appears in both the allow and deny lists, it's denied. This prevents accidental permission grants when using wildcard allows.
 
+Managed agent definitions can enforce part of this layer before a task starts. For example, an enterprise-managed `terraform-reviewer` subagent can define a read-only tool list, a specific model, a max-turn budget, and approved skills/MCP servers. That is useful because it keeps baseline roles consistent across repositories and prevents project-local configuration from silently expanding access.
+
+Do not treat managed agent definitions as the only enforcement point. The runtime should still reject denied tools, the credential broker should still scope tokens, and change control should still require PRs or break-glass approvals.
+
 ---
 
 ## Autonomy Tiers in Practice

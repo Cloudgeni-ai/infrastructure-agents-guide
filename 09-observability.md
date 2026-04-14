@@ -49,6 +49,9 @@ Define a consistent attribute namespace for all agent spans. Pick a prefix (e.g.
 | **Agent context** | `agent.session.id` | `sess-456` |
 | | `agent.run.id` | `run-789` |
 | | `agent.type` | `remediation` |
+| | `agent.definition.source` | `managed` |
+| | `agent.definition.version` | Git SHA or policy version |
+| | `agent.permission.mode` | `read-only` / `validate` |
 | | `agent.organization.id` | `org-123` |
 | **Task context** | `agent.task.type` | `compliance-fix` |
 | | `agent.task.priority` | `high` |
@@ -144,6 +147,13 @@ interface ActionTrailEvent {
   sessionId: string;
   runId: string;
   correlationId: string;
+  agentDefinition?: {
+    name: string;
+    source: 'managed' | 'project' | 'user' | 'plugin' | 'runtime';
+    version?: string;
+    tools?: string[];
+    permissionMode?: string;
+  };
   traceContext?: {
     traceparent?: string;
     tracestate?: string;

@@ -73,7 +73,7 @@ for await (const message of query({
 }
 ```
 
-**Key features**: Built-in file and shell tools, MCP server support, subagent delegation (`Task` tool), session resume via `session_id`, cost budgets (`maxBudgetUsd`), and lifecycle hooks for pre/post tool-use validation.
+**Key features**: Built-in file and shell tools, MCP server support, subagent delegation (`Task` tool), managed/project subagent definitions for reusable roles, session resume via `session_id`, cost budgets (`maxBudgetUsd`), and lifecycle hooks for pre/post tool-use validation.
 
 ### Option 2: OpenAI Codex CLI / Agents SDK
 

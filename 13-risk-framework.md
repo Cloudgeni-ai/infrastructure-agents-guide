@@ -141,6 +141,7 @@ OBSERVABILITY
 ```
 AGENT CONFIGURATION
 [ ] System prompt with hard rules defined
+[ ] Effective agent/subagent definitions resolved by layer and logged
 [ ] Skills/tools defined and tested
 [ ] Tool allow/deny list configured
 [ ] Max iteration and budget limits set
@@ -196,6 +197,7 @@ SESSION MANAGEMENT
 
 GOVERNANCE
 [ ] Organization-level policies defined and injected
+[ ] Managed agent definitions reviewed; project/user definitions cannot expand beyond enterprise policy
 [ ] Autonomy tiers assigned per use case
 [ ] Monthly action trail review process established
 [ ] Incident response plan for agent failures documented

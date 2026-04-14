@@ -135,7 +135,30 @@ produce the expected plan output.
 **Pros**: Rich documentation; agent can reason about when to use a skill; easy to version-control and review; skills can be injected per-agent at runtime.
 **Cons**: Requires the agent to parse and follow instructions (model-dependent); less structured than typed function calls.
 
-### 2. MCP (Model Context Protocol)
+### 2. Subagents as Role-Scoped Capability Bundles
+
+Subagents package an agent role into a reusable definition: prompt, model, tool scope, permission mode, max turns, skills, hooks, and MCP access. In Claude Code, these can live at multiple scopes:
+
+| Scope | Typical Use |
+|-------|-------------|
+| **Managed / enterprise** | Organization-wide baseline roles and restrictions |
+| **Project** (`.claude/agents/`) | Repository-specific reviewers, remediators, and workflow helpers |
+| **User** (`~/.claude/agents/`) | Personal helpers available across projects |
+| **Plugin / marketplace** | Packaged roles distributed with related skills and integrations |
+
+Managed subagents are especially relevant for infrastructure teams because they can cover several layers at once:
+
+- **Role layer** — `security-reviewer`, `terraform-reviewer`, `drift-remediator`, `incident-triage`
+- **Prompt layer** — role-specific instructions, review criteria, and escalation rules
+- **Runtime layer** — model choice, effort level, max turns, and delegation boundaries
+- **Capability layer** — allowed tools, preloaded skills, and scoped MCP servers
+- **Governance layer** — enterprise-managed definitions can override unsafe project or user variants
+
+This makes managed subagents a practical enterprise control for standardizing how agents behave across repositories. They do **not** replace sandboxing, credential brokering, approval gates, deterministic validation, or action trails. Treat them as a high-level role/capability policy that still needs lower-level enforcement.
+
+For multi-tenant products, the same pattern applies even if you don't use Claude Code directly: store resolved agent definitions as versioned artifacts, review them like policy, and make the effective role configuration visible per run.
+
+### 3. MCP (Model Context Protocol)
 
 Anthropic's open standard for connecting agents to external tools and data sources. In practice, MCP has grown from "typed tool bridge" into a broader interoperability layer for **tools, resources, prompts, and long-running task flows**. MCP servers are typically exposed over stdio or HTTP transports:
 
@@ -171,7 +194,7 @@ Modern MCP deployments may also include:
 - Prefer an **internal registry or allowlist** for production
 - Treat tool descriptions and annotations as untrusted input until reviewed
 
-### 3. A2A (Agent-to-Agent Protocols)
+### 4. A2A (Agent-to-Agent Protocols)
 
 MCP is not the right abstraction for every integration. When one agent needs to delegate to another autonomous application with its own memory, approvals, artifacts, and lifecycle, use an **agent-to-agent protocol** such as **A2A**.
 
@@ -188,7 +211,7 @@ Use **MCP** when:
 
 In practice, many infra systems use **MCP inside a worker** and **A2A across product boundaries**.
 
-### 4. LangChain / LangGraph Tools
+### 5. LangChain / LangGraph Tools
 
 Python-native tool registration with decorators:
 
@@ -207,7 +230,7 @@ agent = create_react_agent(llm, [terraform_plan, ...])
 **Pros**: Simple Python-native API; large ecosystem; works with any LLM.
 **Cons**: Python-only; tool docs limited to docstrings; no built-in isolation.
 
-### 5. OpenAI-Style Function Calling
+### 6. OpenAI-Style Function Calling
 
 Define tools as JSON schemas, let the model generate structured arguments:
 
@@ -238,17 +261,19 @@ const tools = [{
 | **CLI tools** (direct) | Man pages / `--help` | None (strings) | Sandbox-level | Entire IaC ecosystem |
 | **Typed CLI wrappers** | Code comments | Strong | Sandbox-level | Build your own |
 | **Skills as files** | Rich (full markdown) | Via code | Per-file | Growing (Claude, community) |
+| **Subagents / agent roles** | Role prompt + frontmatter/config | Via configured tools | Per-agent/session | Growing in Claude-style runtimes |
 | **MCP** | Schema + description | Strong (Zod) | Per-server | Growing fast (vendor-backed) |
 | **A2A** | Agent cards + task schema | Strong | App boundary | Emerging interoperability layer |
 | **LangChain tools** | Docstrings | Python types | None (same process) | Largest |
 | **Function calling** | Schema only | JSON Schema | Your responsibility | Universal |
 
-### Combining Approaches: Skills + MCP + A2A + CLIs
+### Combining Approaches: Subagents + Skills + MCP + A2A + CLIs
 
 These approaches aren't mutually exclusive — they layer together:
 
 - **CLIs** are the foundation. The agent runs `terraform`, `aws`, `git` in its sandbox. This is the raw capability layer.
 - **Skills** define *how* to use those CLIs well. A skill says "when writing Terraform, follow these conventions, validate with plan, max 10 iterations." It's the best-practices layer.
+- **Subagents / managed agent roles** package *who* is doing the work: role prompt, model, allowed tools, skills, MCP access, and safety posture. They can cover parts of the runtime, capability, and policy layers at the same time.
 - **MCP** connects to *live data and APIs*. An MCP server gives the agent access to the Terraform Registry, workspace state, or cloud resource inventory. It's the data layer.
 - **A2A** connects to *other autonomous systems*. A remote remediation agent, ticketing copilot, or approval service can own its own state while still participating in a broader workflow.
 
@@ -313,13 +338,13 @@ Follow these conventions...
 
 The agent loads full instructions only when a skill is activated — names and descriptions stay in context for discovery.
 
-For multi-tenant products, resolve skills in **layers**:
+For multi-tenant products, resolve skills and role definitions in **layers**:
 
 1. vendor-curated or platform-curated base skills
 2. organization-level overrides and custom skills
 3. repository-local skills for team-specific workflows
 
-Version the resolved skill set, cache it, and make the active manifest inspectable in logs and UI. This matters as much as the individual skill content.
+Version the resolved skill and subagent set, cache it, and make the active manifest inspectable in logs and UI. This matters as much as the individual file content.
 
 ### Vendor-Official Skills
 
