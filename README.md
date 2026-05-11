@@ -10,11 +10,7 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 
 **This guide covers every architectural decision** you need to make when building infrastructure agents — with real patterns, code snippets, multiple alternatives, and the risk framework to evaluate your choices.
 
----
-
-## Related Guides
-
-- [Enterprise Agent Guide](https://github.com/Cloudgeni-ai/enterprise-agent-guide) - A generalized version of this guide for enterprise agent systems beyond infrastructure operations.
+If you're looking for the broader, non-infrastructure version, see the [Enterprise Agent Guide](https://github.com/Cloudgeni-ai/enterprise-agent-guide).
 
 ---
 
