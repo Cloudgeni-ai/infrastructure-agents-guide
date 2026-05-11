@@ -12,6 +12,12 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 
 ---
 
+## Related Guides
+
+- [Enterprise Agent Guide](https://github.com/Cloudgeni-ai/enterprise-agent-guide) - A generalized version of this guide for enterprise agent systems beyond infrastructure operations.
+
+---
+
 ## Who This Is For
 
 - **Platform engineers** evaluating whether to build or buy agent capabilities
