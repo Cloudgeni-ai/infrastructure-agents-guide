@@ -12,6 +12,8 @@ AI agents can write IaC, fix compliance findings, detect drift, review PRs, and 
 
 If you're looking for the broader, non-infrastructure version, see the [Enterprise Agent Guide](https://github.com/Cloudgeni-ai/enterprise-agent-guide).
 
+If you want to see these patterns implemented in a real product, see [OpenGeni](https://opengeni.ai) and its [open-source repository](https://github.com/Cloudgeni-ai/opengeni), which packages this guide's architecture into a proven stack for infrastructure agents.
+
 ---
 
 ## Who This Is For
@@ -123,6 +125,8 @@ Please keep contributions focused on patterns and architecture — not vendor-sp
 This guide is built by the team at **[Cloudgeni](https://cloudgeni.ai)**, where we design, build, and operate autonomous infrastructure agents in production across AWS, Azure, GCP, and OCI for enterprise teams.
 
 Every pattern here comes from running these systems in production. We open-sourced it because we kept answering the same architectural questions — writing them down once seemed more useful.
+
+We also released **[OpenGeni](https://opengeni.ai)** as a concrete implementation of this guide: a production-oriented infrastructure-agent stack with source available at [Cloudgeni-ai/opengeni](https://github.com/Cloudgeni-ai/opengeni).
 
 ---
 
