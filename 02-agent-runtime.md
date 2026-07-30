@@ -112,6 +112,10 @@ console.log(result.finalOutput);
 
 **Raw Responses API**: For maximum control, call `client.responses.create()` directly. The `previous_response_id` parameter maintains reasoning state across turns without resending the full conversation history. Choose this path when you need custom background-mode orchestration, your own checkpointing model, or very explicit control over tool routing and retries.
 
+**Sandbox Agents (beta)**: The OpenAI Agents SDK now also exposes a provider-neutral [`SandboxAgent`](https://developers.openai.com/api/docs/guides/agents/sandboxes) abstraction in TypeScript and Python. It keeps the trusted harness — model calls, approvals, tracing, recovery, and run state — outside the execution sandbox, while a swappable client owns files, shell commands, mounts, ports, snapshots, and resume. Official clients cover local Unix, Docker, Blaxel, Cloudflare, Daytona, E2B, Modal, Runloop, and Vercel. This is a useful reference design even when you use another runtime: keep **agent orchestration state** separate from **sandbox workspace state**.
+
+For long model calls, the Responses API's [background mode](https://developers.openai.com/api/docs/guides/background) supports polling, cancellation, and resumable event streams using sequence-number cursors. Treat that provider-side response state as one execution primitive, not as your system of record for business workflow state, approvals, or audit history.
+
 ### Option 3: LangChain / LangGraph
 
 The Python ecosystem's most popular agent frameworks. [LangChain](https://github.com/langchain-ai/langchain) provides a simple ReAct agent loop. [LangGraph](https://github.com/langchain-ai/langgraph) adds stateful graphs with conditional routing — useful for complex multi-step workflows like "scan → triage → remediate → validate → PR."
@@ -202,23 +206,23 @@ Beyond the vendor SDKs, a growing ecosystem of open-source frameworks handles th
 
 #### Python Frameworks
 
-| Framework | Stars | Key Differentiator | Best For |
-|-----------|-------|-------------------|----------|
-| [**CrewAI**](https://github.com/crewAIInc/crewAI) | ~57K | Role-based multi-agent crews with deterministic Flows orchestration | Multi-agent collaboration (scan agent → triage agent → remediation agent) |
-| [**Pydantic AI**](https://github.com/pydantic/pydantic-ai) | ~15K | Type-safe, Pydantic-validated structured outputs. "FastAPI for agents" | Infrastructure agents where validated, typed outputs matter |
-| [**Smolagents**](https://github.com/huggingface/smolagents) (HF) | ~26K | Agents write executable Python code instead of JSON tool calls. ~1K LOC core | Lightweight agents, code-generation-first workflows |
-| [**Haystack**](https://github.com/deepset-ai/haystack) (deepset) | ~22K | Pipeline-as-graph architecture, YAML-serializable, K8s-ready | RAG + agent pipelines, production search/retrieval workflows |
-| [**Google ADK**](https://github.com/google/adk-python) | ~16K | Google-backed, optimized for Gemini but model-agnostic | GCP-native teams, multi-language (Python/Go/TS) |
-| [**Strands Agents**](https://github.com/strands-agents/sdk-python) (AWS) | ~10K | AWS-backed, model-driven approach, 14M+ downloads | AWS-native teams, Bedrock integration |
+| Framework | Key Differentiator | Best For |
+|-----------|-------------------|----------|
+| [**CrewAI**](https://github.com/crewAIInc/crewAI) | Role-based multi-agent crews with deterministic Flows orchestration | Multi-agent collaboration (scan agent → triage agent → remediation agent) |
+| [**Pydantic AI**](https://github.com/pydantic/pydantic-ai) | Type-safe, Pydantic-validated structured outputs. "FastAPI for agents" | Infrastructure agents where validated, typed outputs matter |
+| [**Smolagents**](https://github.com/huggingface/smolagents) (HF) | Agents write executable Python code instead of JSON tool calls | Lightweight agents, code-generation-first workflows |
+| [**Haystack**](https://github.com/deepset-ai/haystack) (deepset) | Pipeline-as-graph architecture, YAML-serializable, K8s-ready | RAG + agent pipelines, production search/retrieval workflows |
+| [**Google ADK**](https://github.com/google/adk-python) | Google-backed, optimized for Gemini but model-agnostic | GCP-native teams, multi-language runtimes |
+| [**Strands Agents**](https://github.com/strands-agents/sdk-python) (AWS) | AWS-backed, model-driven approach | AWS-native teams, Bedrock integration |
 
-**Note on AutoGen**: Microsoft's [AutoGen](https://github.com/microsoft/autogen) (~55K stars) pioneered multi-agent conversations but is now in **maintenance mode**. New development moved to the Microsoft Agent Framework (Semantic Kernel). The community fork [AG2](https://github.com/ag2ai/ag2) continues active development.
+**Note on AutoGen**: Microsoft's [AutoGen](https://github.com/microsoft/autogen) pioneered multi-agent conversations but is now in **maintenance mode**. New development moved to the Microsoft Agent Framework. The community fork [AG2](https://github.com/ag2ai/ag2) continues active development.
 
 #### TypeScript Frameworks
 
-| Framework | Stars | Key Differentiator | Best For |
-|-----------|-------|-------------------|----------|
-| [**Mastra**](https://github.com/mastra-ai/mastra) | ~20K | Full-stack TS agent framework with built-in RAG, memory, MCP, evals. 81+ providers | Complete TypeScript agent platform |
-| [**Vercel AI SDK**](https://github.com/vercel/ai) | ~22K | Streaming-first, React/Next.js native. 20M+ monthly npm downloads | Web-facing agents, streaming UI, Next.js apps |
+| Framework | Key Differentiator | Best For |
+|-----------|-------------------|----------|
+| [**Mastra**](https://github.com/mastra-ai/mastra) | Full-stack TS agent framework with built-in RAG, memory, MCP, and evals | Complete TypeScript agent platform |
+| [**Vercel AI SDK**](https://github.com/vercel/ai) | Streaming-first, React/Next.js native | Web-facing agents, streaming UI, Next.js apps |
 
 #### How They Handle the Agentic Loop
 
@@ -227,7 +231,7 @@ All of these implement the same core pattern — LLM → tool call → execute �
 - **CrewAI** adds a layer above the loop: you define agent *roles* and *goals*, then the framework orchestrates multi-agent collaboration with deterministic Flows controlling step ordering.
 - **Pydantic AI** emphasizes type safety: every tool input and agent output is Pydantic-validated. The `@agent.tool` decorator gives tools access to agent context (dependencies, retries).
 - **Smolagents** takes a different approach entirely: instead of JSON tool calls, the agent writes executable Python code. This means it can compose tools, use loops, and conditionals naturally — interesting for infrastructure tasks that involve scripting.
-- **Mastra** provides a unified `"provider/model-name"` string across 2,400+ models, with built-in MCP server support, memory management, and workflow orchestration.
+- **Mastra** provides a unified `"provider/model-name"` abstraction across a broad model catalog, with built-in MCP server support, memory management, and workflow orchestration.
 - **Vercel AI SDK** uses `generateText`/`streamText` with a step limit. It streams tool calls and intermediate results to the UI in real time — unique for user-facing agent interfaces.
 
 ### Comparison
@@ -240,7 +244,7 @@ All of these implement the same core pattern — LLM → tool call → execute �
 | **CrewAI** | Python | Any | Decorators + custom | Flows state | Role-based crews | Medium |
 | **Pydantic AI** | Python | Any | Typed decorators | You build | You build | Low-Medium |
 | **Smolagents** | Python | Any | Code-as-action | You build | Multi-agent | Low |
-| **Mastra** | TypeScript | Any (81+ providers) | MCP + custom | Built-in memory | Workflows | Medium |
+| **Mastra** | TypeScript | Any | MCP + custom | Built-in memory | Workflows | Medium |
 | **Vercel AI SDK** | TypeScript | Any | JSON schema | You build | You build | Low-Medium |
 | **Direct API** | Any | Any | JSON schema | You build | You build | High (but simple) |
 
@@ -752,7 +756,7 @@ Good runtimes do four things well:
 1. **Compact old turns** instead of replaying every prior tool result forever
 2. **Promote stable facts** into memory/checkpoints, not transient reasoning
 3. **Keep static prefixes cache-friendly** (policies, skills, repo instructions)
-4. **Resume from identifiers** (`session_id`, `conversationId`, `previous_response_id`, checkpoint keys) rather than blindly reconstructing giant transcripts
+4. **Resume from identifiers** (`session_id`, conversation IDs, `previous_response_id`, checkpoint keys) rather than blindly reconstructing giant transcripts
 
 This matters as much as retrieval quality. A mediocre retrieval stack with disciplined context management will usually outperform a great retrieval stack that keeps appending tokens until the window collapses.
 
@@ -805,6 +809,17 @@ app.get('/api/v1/sessions/:sessionId/runs/:runId/events', (req, res) => {
   req.on('close', () => subscriber.unsubscribe());
 });
 ```
+
+### Durable History, Ephemeral Fanout
+
+Do not make Redis Pub/Sub, NATS Core, an open SSE connection, or a provider stream the authoritative history. The production pattern used by [OpenGeni](https://github.com/Cloudgeni-ai/opengeni) is:
+
+1. append each accepted event to a durable database with a per-session sequence number
+2. publish it to a low-latency fanout bus
+3. let clients reconnect with their last durable sequence
+4. backfill the gap from the database, then continue with live events
+
+The database answers "what happened"; the realtime bus answers "what is happening now." Enforce a unique idempotency key or lineage key for producer retries, and serialize event-sequence allocation per session so concurrent writers cannot reorder the audit trail. Large tool output and binary artifacts should go to object storage; the event log stores a bounded preview, digest, media type, size, and durable reference.
 
 ---
 

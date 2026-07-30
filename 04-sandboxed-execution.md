@@ -428,7 +428,63 @@ spec:
 
 ---
 
-## Comparison Matrix
+## Option 6: Managed Agent Sandbox APIs
+
+There is now a distinct market for programmatically created agent workspaces. Unlike a job runner, these products commonly expose files, command execution, background processes, ports/previews, pause/resume, and snapshots as a session API.
+
+| Provider / Service | Execution and Lifecycle | Best Fit | Watch For |
+|--------------------|-------------------------|----------|-----------|
+| [E2B](https://e2b.dev/docs) | MicroVM sandboxes; pause/resume, auto-resume, filesystem + memory snapshots, desktop options | Stateful coding/data agents and resumable workspaces | Reconnect streams after snapshot/pause; make lifecycle costs explicit |
+| [Daytona](https://www.daytona.io/docs/sandboxes) | Containers by default; Linux/Windows VMs, GPU, snapshots, fork, pause/archive/recover | Long-running workspaces and OS/GPU variety | Choose container vs VM boundary deliberately |
+| [Modal Sandboxes](https://modal.com/docs/guide/sandboxes) | gVisor-isolated containers; filesystem/directory/memory snapshots, volumes, egress allowlists | Bursty workloads, custom images, data/GPU work | Sandboxes have bounded lifetimes; snapshot/restore long work |
+| [Vercel Sandbox](https://vercel.com/docs/sandbox) | Firecracker microVMs, snapshots, network firewall, credential brokering | High-concurrency short-lived code execution and previews | Platform/runtime coupling; verify required CLI and OS packages |
+| [Cloudflare Sandbox](https://developers.cloudflare.com/sandbox/) | Isolated containers controlled from Workers/Durable Objects; files, processes, previews | TypeScript/edge-native agent products | Container rather than per-sandbox VM boundary |
+| [Northflank Sandboxes](https://northflank.com/docs/v1/application/sandboxes/sandboxes-on-northflank) | MicroVM-backed containers, persistence, GPU, pause/destroy, hosted or BYOC | Multi-tenant platforms needing VPC/BYOC control | Public port exposure and persistence must be policy-gated |
+| [Azure Container Apps Dynamic Sessions](https://learn.microsoft.com/en-us/azure/container-apps/sessions) | Prewarmed Hyper-V-isolated code-interpreter or custom-container pools | Azure-native interactive execution with fast allocation | Code-interpreter and custom-container observability differ |
+| [AWS AgentCore Code Interpreter](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html) | Managed code sandbox with IAM, network modes, and CloudTrail integration | AWS-native agent tools and governed code execution | Narrower than a general-purpose dev box; execution role scope is critical |
+| [Cloud Run Sandboxes](https://docs.cloud.google.com/run/docs/code-execution) | Nested ephemeral sandboxes inside an existing Cloud Run service | GCP-native agents needing fast local code/subagent execution | Preview maturity; agent host and nested sandbox have distinct boundaries |
+
+Runtime vendors are converging on a provider-neutral harness/compute split. [OpenAI Sandbox Agents](https://developers.openai.com/api/docs/guides/agents/sandboxes) (beta) ships clients for several providers, while [Claude Managed Agents](https://claude.com/blog/claude-managed-agents-updates) can use self-hosted or managed sandboxes. Keep your own sandbox contract small so switching providers does not rewrite agent logic.
+
+### Define a Provider-Neutral Sandbox Contract
+
+At minimum, normalize:
+
+```typescript
+interface SandboxProvider {
+  create(spec: WorkspaceSpec): Promise<SandboxHandle>;
+  resume(state: SerializedSandboxState): Promise<SandboxHandle>;
+  exec(handle: SandboxHandle, command: Command): Promise<ProcessHandle>;
+  upload(handle: SandboxHandle, files: FileInput[]): Promise<void>;
+  download(handle: SandboxHandle, paths: string[]): Promise<ArtifactRef[]>;
+  snapshot(handle: SandboxHandle): Promise<SnapshotRef>;
+  inspect(handle: SandboxHandle): Promise<SandboxStatus>;
+  terminate(handle: SandboxHandle): Promise<void>;
+  listOwned(): Promise<SandboxHandle[]>; // cleanup/reconciliation
+}
+```
+
+Declare optional capabilities — ports, PTY, desktop, GPU, fork, memory snapshot, domain allowlist — instead of pretending every provider behaves identically. Persist provider ID, provider sandbox ID, workspace revision, creation generation, lease owner, resource profile, and last verified status outside the worker process.
+
+### Recovery Must Be Fenced and Verifiable
+
+A provider reporting "running" does not prove that the right workspace, process, or credentials survived. Use a generation-fenced recovery flow:
+
+1. acquire a durable recovery lease for the session and expected generation
+2. inspect the provider object and verify its identity
+3. restore or rematerialize the expected workspace revision
+4. reissue short-lived credentials and rebuild mounts; never recover expired secrets from a snapshot
+5. run readiness checks for required files, tools, network policy, and process routing
+6. publish the new active generation atomically
+7. terminate superseded provider objects and record cleanup success or failure
+
+Archive or snapshot creation is not success until its digest, contents, and restore path are verified. Run an orphan sweeper against `listOwned()` and compare provider inventory with durable session state. Record cleanup failures as evidence; do not erase the provider ID and declare the leak gone.
+
+This pattern is backported from [OpenGeni's sandbox/control-plane architecture](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/architecture.md), where worker restarts and provider recovery are treated as distributed ownership changes rather than simple container restarts.
+
+---
+
+## Worker Deployment Comparison
 
 | Feature | Docker | Modal | Azure Container Apps | AWS Lambda/ECS | Kubernetes |
 |---------|--------|-------|---------------------|----------------|------------|

@@ -38,7 +38,16 @@ Traces                             Traces
 
 ## OpenTelemetry Attribute Schema
 
-Define a consistent attribute namespace for all agent spans. Pick a prefix (e.g., `agent.` or your product name) and stick with it. Here's a recommended set of attributes organized by category:
+OpenTelemetry now maintains dedicated [GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai) for model calls, agent/workflow invocation, tool execution, retrieval, token usage, and MCP. Use those standard `gen_ai.*` attributes where they fit, and keep a separate application namespace for infrastructure-specific policy and lifecycle data.
+
+| Concern | Prefer |
+|---------|--------|
+| Provider, requested/response model, token usage, finish reason | `gen_ai.*` semantic conventions |
+| Agent/workflow and tool invocation spans | Standard `invoke_agent`, `invoke_workflow`, and `execute_tool` operation names |
+| Session/run, organization, autonomy tier, policy revision, credential scope | Your `agent.*` or product namespace |
+| Prompts, tool arguments/results, retrieved documents | Redacted references or opt-in content capture, never raw by default |
+
+The GenAI conventions evolve separately from core OpenTelemetry semantic conventions, so pin the convention/schema version used by instrumentation and dashboards. Define a consistent namespace for the remaining domain-specific spans:
 
 | Category | Attribute | Example Value |
 |----------|-----------|---------------|

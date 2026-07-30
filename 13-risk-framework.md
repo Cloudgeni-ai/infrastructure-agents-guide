@@ -82,7 +82,7 @@ Tier 4 (PROD WITH GATES)
 |----------------------|---------------|---------------------------|
 | **GOVERN** | Establish AI risk governance | Autonomy tiers, policy engine, org-level policies (Ch 8) |
 | **MAP** | Understand AI risks in context | Risk matrix above, agent-specific threat modeling |
-| **MEASURE** | Assess and track risks | Observability, action trails, trajectory tests (Ch 9, 12) |
+| **MEASURE** | Assess and track risks | Observability, action trails, trajectory tests (Ch 9, 11) |
 | **MANAGE** | Treat and monitor risks | Guardrails, sandboxing, credential isolation, notifications (Ch 4-8, 10) |
 
 ### OWASP LLM Top 10 Coverage
