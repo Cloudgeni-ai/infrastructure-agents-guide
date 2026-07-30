@@ -94,14 +94,14 @@ This guide doesn't prescribe a single stack. For each architectural layer, we co
 
 | Layer | Options Covered |
 |-------|----------------|
-| **LLM Runtime** | Claude Agent SDK, OpenAI Agents SDK / Codex CLI, LangChain/LangGraph, direct API |
+| **LLM Runtime** | Claude Agent SDK / Managed Agents, OpenAI Agents SDK / Sandbox Agents / Codex CLI, LangChain/LangGraph, direct API |
 | **Agent Roles** | Managed/project subagents, app-level agent configs, plugins |
 | **Task Queue** | Redis Streams, BullMQ, AWS SQS, RabbitMQ, Temporal |
-| **Sandboxing** | Docker, Modal, Azure Container Apps Jobs, AWS Lambda, Firecracker |
+| **Sandboxing** | Docker/Kubernetes, Modal, E2B, Daytona, Vercel Sandbox, Cloudflare Sandbox, Northflank, Azure Dynamic Sessions, AWS AgentCore, Cloud Run Sandboxes |
 | **Credential Store** | HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, 1Password |
 | **Change Control** | GitHub Actions, GitLab CI, Azure Pipelines, Atlantis, Spacelift |
-| **Observability** | OpenTelemetry + Grafana, Datadog, Dash0, New Relic |
-| **Interoperability** | MCP, A2A |
+| **Observability** | OpenTelemetry + GenAI semantic conventions, Grafana, Datadog, Dash0, New Relic |
+| **Interoperability** | MCP (stateless core + extensions), A2A 1.0 |
 | **Notifications** | Slack, Microsoft Teams, PagerDuty, Opsgenie, email, webhooks |
 | **Scheduling** | Cron (systemd/k8s), Temporal, AWS EventBridge, Azure Timer Triggers |
 | **State Storage** | PostgreSQL, Redis, Azure Blob, S3, SQLite |

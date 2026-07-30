@@ -313,6 +313,12 @@ BEFORE PRODUCTION:
 [ ] Short-lived credentials only (1h max TTL)
 [ ] Stuck run watchdog is active
 [ ] PEL recovery handles crashed workers
+[ ] Durable event replay handles disconnect gaps, duplicate delivery, and concurrent writers
+[ ] Recovered runs remain bound to the accepted tool-policy revision
+[ ] Sandbox restore verifies workspace identity and credentials before readmission
+[ ] Orphan sandbox cleanup is reconciled against provider inventory
+[ ] Proposed agent memory is not retrievable before approval
+[ ] Goal continuations are idempotent and stop on no-progress or budget exhaustion
 [ ] Framework dependencies monitored for CVEs
 [ ] Eval dataset exists for real failure cases, not just toy examples
 [ ] New prompts/models roll out through canaries before wider autonomy

@@ -309,7 +309,7 @@ function hasRemainingDrift(result: PipelineResult): boolean {
 
 Give reviewers full context in the PR body:
 
-```markdown
+````markdown
 ## Summary
 Fixes compliance finding: S3 bucket `my-bucket` missing server-side encryption.
 
@@ -342,7 +342,7 @@ Fixes compliance finding: S3 bucket `my-bucket` missing server-side encryption.
 - Framework: CIS AWS Benchmark v3.0
 - Control: 2.1.1 - Ensure S3 bucket has server-side encryption enabled
 
-```
+````
 
 ---
 
@@ -462,7 +462,6 @@ Examples:
 - `agent/pr-review/issue-456/x2y4z6`
 
 The `agent/` prefix makes it easy to filter agent-created branches in CI rules, branch protection, and cleanup scripts. The unique suffix prevents collisions when agents work on the same finding concurrently.
-```
 
 ---
 

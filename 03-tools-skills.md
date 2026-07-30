@@ -160,7 +160,7 @@ For multi-tenant products, the same pattern applies even if you don't use Claude
 
 ### 3. MCP (Model Context Protocol)
 
-Anthropic's open standard for connecting agents to external tools and data sources. In practice, MCP has grown from "typed tool bridge" into a broader interoperability layer for **tools, resources, prompts, and long-running task flows**. MCP servers are typically exposed over stdio or HTTP transports:
+The open standard for connecting agents to external tools and data sources. In practice, MCP has grown from "typed tool bridge" into a broader interoperability layer for **tools, resources, prompts, and optional extensions**. MCP servers are typically exposed over stdio or HTTP transports:
 
 ```typescript
 import { McpServer } from '@modelcontextprotocol/sdk/server';
@@ -176,13 +176,16 @@ server.tool('terraform_plan',
 );
 ```
 
-Modern MCP deployments may also include:
+The [`2026-07-28` specification](https://modelcontextprotocol.io/specification/2026-07-28) is a significant operational change:
 
-- **Structured outputs** so tool results don't have to be parsed from plain text
-- **Elicitation / user-input flows** for agent questions
-- **Task-oriented operations** for long-running work instead of single request/response calls
-- **Registry metadata** for discovery and installation
-- **Authorization conventions** so clients can negotiate OAuth and related flows consistently
+- the core protocol is **stateless** and each request carries its version and capabilities
+- `server/discover` replaces the mandatory initialization handshake
+- application state is represented by explicit handles rather than transport sessions
+- list and resource responses can declare cache lifetimes and scope
+- W3C trace context has standard `_meta` keys
+- long-running **Tasks**, **Skills over MCP**, and **MCP Apps** are opt-in extensions rather than core assumptions
+
+This makes horizontally scaled HTTP servers easier to route and cache, but it is a breaking migration from session-oriented `2025-11-25` implementations. Tasks were experimental in that earlier revision and changed shape when they moved to an extension; do not build a workflow engine that assumes every client implements them.
 
 **Pros**: Standard protocol; typed schemas; supported by multiple LLM providers; fast-growing ecosystem of vendor and community servers.
 **Cons**: Still requires operational discipline: version pinning, auth hardening, allowlists, and compatibility testing across clients.
@@ -190,13 +193,18 @@ Modern MCP deployments may also include:
 **Operational guidance**:
 
 - Pin both the **server version** and the **MCP spec version** you tested against
+- Test upgrade and downgrade behavior explicitly; do not silently lose required extensions
 - Treat registry presence as **discoverability**, not trust
 - Prefer an **internal registry or allowlist** for production
 - Treat tool descriptions and annotations as untrusted input until reviewed
+- For HTTP servers, follow the current [MCP authorization profile](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization): use protected-resource metadata, PKCE, issuer validation, resource indicators, token audience validation, and step-up scopes
+- Never pass an MCP access token through to an upstream API. The MCP server is one OAuth resource; downstream services require separate audience-bound credentials
 
 ### 4. A2A (Agent-to-Agent Protocols)
 
-MCP is not the right abstraction for every integration. When one agent needs to delegate to another autonomous application with its own memory, approvals, artifacts, and lifecycle, use an **agent-to-agent protocol** such as **A2A**.
+MCP is not the right abstraction for every integration. When one agent needs to delegate to another autonomous application with its own memory, approvals, artifacts, and lifecycle, use an **agent-to-agent protocol** such as **[A2A 1.0](https://a2a-protocol.org/latest/specification)**.
+
+A2A 1.0 defines agent discovery through Agent Cards, stateful Tasks, Messages, Artifacts, streaming and push updates, and HTTP/JSON, JSON-RPC, and gRPC bindings. That is a more mature interoperability surface than the early 0.x protocol, but production clients should still send an explicit `A2A-Version`, verify Agent Card identity/signatures where available, and authorize each remote agent as its own security principal.
 
 Use **A2A** when:
 
@@ -262,8 +270,8 @@ const tools = [{
 | **Typed CLI wrappers** | Code comments | Strong | Sandbox-level | Build your own |
 | **Skills as files** | Rich (full markdown) | Via code | Per-file | Growing (Claude, community) |
 | **Subagents / agent roles** | Role prompt + frontmatter/config | Via configured tools | Per-agent/session | Growing in Claude-style runtimes |
-| **MCP** | Schema + description | Strong (Zod) | Per-server | Growing fast (vendor-backed) |
-| **A2A** | Agent cards + task schema | Strong | App boundary | Emerging interoperability layer |
+| **MCP** | Schema + description | Strong (JSON Schema) | Per-server/request | Mature core; extensions vary |
+| **A2A 1.0** | Agent Cards + task/artifact schema | Strong | App boundary | Versioned interoperability standard |
 | **LangChain tools** | Docstrings | Python types | None (same process) | Largest |
 | **Function calling** | Schema only | JSON Schema | Your responsibility | Universal |
 
@@ -278,6 +286,30 @@ These approaches aren't mutually exclusive — they layer together:
 - **A2A** connects to *other autonomous systems*. A remote remediation agent, ticketing copilot, or approval service can own its own state while still participating in a broader workflow.
 
 HashiCorp's Claude plugin demonstrates three of these layers directly: CLI tools installed in the environment, skills for Terraform code generation patterns, and an MCP server for live Terraform Registry and Cloud API access.
+
+---
+
+## Version the Effective Tool Policy
+
+The configured catalog is not enough for audit or recovery. At session creation, resolve the effective tools from platform defaults, organization policy, repository config, user selection, and temporary grants, then persist an immutable policy revision:
+
+```typescript
+interface EffectiveToolPolicy {
+  revision: string;                 // content hash or immutable version
+  tools: {
+    serverId: string;
+    toolName: string;
+    mode: 'allow' | 'deny' | 'approval-required';
+    credentialGrantId?: string;     // reference only; never the secret
+  }[];
+  resolvedAt: string;
+  resolvedFrom: string[];           // policy/config revisions
+}
+```
+
+Every tool call, approval, retry, and recovered run must bind to that revision. Mid-session policy changes create a new audited revision; they do not silently rewrite what an already-approved attempt was allowed to do. Credentials for third-party MCP servers should be write-only to users after creation, rotatable, scoped per session or connection, and redacted at both the tool boundary and persistence boundary.
+
+This is one of the most useful patterns to backport from [OpenGeni's MCP surfaces](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/mcp-surfaces.md): tool discovery, tool authorization, credential authority, and human approval are separate decisions even when the UI presents one catalog.
 
 ---
 
@@ -316,7 +348,7 @@ Vendors, cloud providers, and the community have published production-grade skil
 
 ### The Agent Skills Format
 
-The standard format — popularized by [Anthropic's skills spec](https://github.com/anthropics/skills) (72K+ stars) — is structurally simple: a directory with a required `SKILL.md` file containing YAML frontmatter (name, description) plus optional scripts and assets. The frontmatter follows a **three-level progressive disclosure** model:
+The format popularized by [Anthropic's skills repository](https://github.com/anthropics/skills) is structurally simple: a directory with a required `SKILL.md` file containing YAML frontmatter (name, description) plus optional scripts and assets. The frontmatter follows a **three-level progressive disclosure** model:
 
 ```yaml
 ---
@@ -384,7 +416,7 @@ Provides live access to the Terraform ecosystem via MCP:
 
 #### AWS — [awslabs/mcp](https://github.com/awslabs/mcp)
 
-The AWS MCP monorepo (8K+ stars) contains three IaC-relevant servers:
+The AWS MCP monorepo contains three IaC-relevant servers:
 
 | Server | Capabilities | Risk Level |
 |--------|-------------|------------|
@@ -398,24 +430,34 @@ The AWS MCP monorepo (8K+ stars) contains three IaC-relevant servers:
 
 Available as `@pulumi/mcp-server` on npm and `docker pull mcp/pulumi`. Interacts with Pulumi Cloud for stack preview, deploy, output retrieval, and registry queries. Requires OAuth flow and Pulumi Access Token with org scoping.
 
+#### Other Official Infrastructure Servers
+
+| Vendor | Server | Infrastructure-Relevant Surface |
+|--------|--------|---------------------------------|
+| Microsoft | [Azure MCP Server](https://learn.microsoft.com/en-us/azure/developer/azure-mcp-server/overview) | Azure resource discovery and operations using Entra ID, managed identity, and Azure RBAC |
+| Google | [Google MCP catalog](https://github.com/google/mcp) and [gcloud MCP](https://github.com/googleapis/gcloud-mcp) | Managed Google/Google Cloud endpoints plus `gcloud`-backed resource operations |
+| Spacelift | [Spacelift MCP](https://docs.spacelift.io/concepts/intelligence/spacelift-mcp/connecting) | OAuth-protected access to IaC stacks, runs, and platform workflows |
+
+Treat a vendor badge as provenance, not blanket approval. Enumerate the exact tools enabled, separate read and mutation scopes, and route deployment-capable calls through the same plan/approval pipeline as direct CLI operations.
+
 ### Community Skills (Notable)
 
-| Repository | Stars | Focus | Why It's Notable |
-|-----------|-------|-------|-----------------|
-| [antonbabenko/terraform-skill](https://github.com/antonbabenko/terraform-skill) | 1.1K+ | Terraform & OpenTofu | By Anton Babenko (prolific TF community contributor). Comprehensive single-file SKILL.md covering testing, modules, CI/CD, and production patterns |
-| [akin-ozer/cc-devops-skills](https://github.com/akin-ozer/cc-devops-skills) | 70+ | Multi-tool DevOps | 31 skills spanning Terraform, Terragrunt, Ansible, Kubernetes, Helm, GitHub Actions, GitLab CI, Jenkins, PromQL, and more |
-| [terramate-io/agent-skills](https://github.com/terramate-io/agent-skills) | 25+ | Terraform, OpenTofu, Terramate | State splitting, drift reconciliation, stack management |
-| [dirien/claude-skills](https://github.com/dirien/claude-skills) | — | Pulumi (TS/Go/Python) | Pulumi community skills emphasizing ESC + OIDC patterns |
-| [sigridjineth/hello-ansible-skills](https://github.com/sigridjineth/hello-ansible-skills) | 23+ | Ansible | Playbook development, debugging, shell-to-ansible conversion |
+| Repository | Focus | Why It's Notable |
+|-----------|-------|-----------------|
+| [antonbabenko/terraform-skill](https://github.com/antonbabenko/terraform-skill) | Terraform & OpenTofu | By Anton Babenko (prolific TF community contributor). Comprehensive single-file SKILL.md covering testing, modules, CI/CD, and production patterns |
+| [akin-ozer/cc-devops-skills](https://github.com/akin-ozer/cc-devops-skills) | Multi-tool DevOps | Skills spanning Terraform, Terragrunt, Ansible, Kubernetes, Helm, CI/CD, and PromQL |
+| [terramate-io/agent-skills](https://github.com/terramate-io/agent-skills) | Terraform, OpenTofu, Terramate | State splitting, drift reconciliation, stack management |
+| [dirien/claude-skills](https://github.com/dirien/claude-skills) | Pulumi (TS/Go/Python) | Pulumi community skills emphasizing ESC + OIDC patterns |
+| [sigridjineth/hello-ansible-skills](https://github.com/sigridjineth/hello-ansible-skills) | Ansible | Playbook development, debugging, shell-to-ansible conversion |
 
 ### Curated Skill Directories
 
 For discovering more skills:
 
-| Directory | Stars | Description |
-|----------|-------|-------------|
-| [VoltAgent/awesome-agent-skills](https://github.com/VoltAgent/awesome-agent-skills) | 7.5K+ | 300+ agent skills directory, multi-platform |
-| [travisvn/awesome-claude-skills](https://github.com/travisvn/awesome-claude-skills) | 7.3K+ | Curated Claude skills list |
+| Directory | Description |
+|----------|-------------|
+| [VoltAgent/awesome-agent-skills](https://github.com/VoltAgent/awesome-agent-skills) | Large multi-platform agent skills directory |
+| [travisvn/awesome-claude-skills](https://github.com/travisvn/awesome-claude-skills) | Curated Claude skills list |
 
 ---
 

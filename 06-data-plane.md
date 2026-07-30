@@ -340,6 +340,50 @@ In practice, use both: inject the obvious context up front, and give the agent s
 
 ---
 
+## Govern Agent-Written Memory
+
+Past sessions are useful evidence, but an agent's summary of a session is not automatically organizational truth. If agents can write directly into future retrieval context, one hallucination, stale assumption, or prompt injection becomes a durable cross-session attack.
+
+Use a proposal workflow:
+
+```text
+agent proposes memory
+        ↓
+validate scope + provenance + redaction
+        ↓
+human or trusted API reviews
+        ↓
+approved → eligible for retrieval
+rejected → retained for audit, never retrieved
+```
+
+Model memory as a governed record, not a text blob:
+
+```typescript
+interface KnowledgeMemory {
+  id: string;
+  status: 'proposed' | 'approved' | 'rejected' | 'superseded' | 'expired';
+  content: string;
+  workspaceId: string;
+  repositoryId?: string;
+  environment?: string;
+  visibility: 'workspace' | 'team' | 'repository' | 'private';
+  sourceSessionId: string;
+  sourceEventSequence: number;
+  proposedBy: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  expiresAt?: string;
+  supersedesId?: string;
+}
+```
+
+Retrieval must enforce the same subject and workspace authorization as the source data; metadata filters are not a substitute for an authorization boundary. Show provenance and review status in the UI, expire operational facts, and support superseding rather than silently editing history. Store durable decisions and reusable facts — not hidden reasoning, raw credentials, or speculative diagnoses.
+
+[OpenGeni](https://github.com/Cloudgeni-ai/opengeni) uses this pattern for reviewed workspace memory: agents can search approved memories and propose new ones, but a human or host API admits them into future retrieval context. The same control is useful for infrastructure ownership, runbook exceptions, and remediation lessons.
+
+---
+
 ## Exposing Data to Agents
 
 Raw database access is too dangerous and too unstructured. Expose the data plane through typed APIs (tools, skills, or MCP resources) that return exactly what agents need. Example query patterns:

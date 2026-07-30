@@ -183,6 +183,38 @@ async function handlePRWebhook(event: PREvent) {
 
 ---
 
+## Goal-Driven Continuation
+
+Long-running autonomous work should stop because the objective is complete or safely paused — not merely because one model turn ended. Represent the goal as durable state with explicit success criteria:
+
+```typescript
+interface AgentGoal {
+  objective: string;
+  successCriteria: string[];
+  status: 'active' | 'complete' | 'paused' | 'blocked' | 'cancelled';
+  revision: number;
+  tokenBudget: number;
+  timeBudgetMs: number;
+  noProgressCount: number;
+  completionEvidence?: ArtifactRef[];
+  pauseReason?: string;
+}
+```
+
+When a turn ends while the goal is still active, schedule a durable continuation only after checking:
+
+- no human approval or answer is pending
+- the previous attempt committed observable progress
+- token, time, tool-call, and spend budgets remain
+- no newer user instruction, interrupt, or goal revision superseded the wake
+- the continuation has one idempotent wake obligation, not multiple competing timers
+
+Require `complete` to include evidence such as a PR, passing plan, test report, finding resolution, or verified artifact. Auto-pause after repeated no-progress continuations, and make budget exhaustion a visible paused state rather than a silent failure or unbounded loop.
+
+This pattern comes from [OpenGeni's durable goals](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/goals.md): completion, pause, interrupt, approval, and autonomous wake-up are explicit state transitions that survive worker restarts. It works especially well for infrastructure tasks that wait on CI, external scans, or human review.
+
+---
+
 ## Notifications
 
 Autonomous agents run in the background. Without notifications, you get two failure modes:
