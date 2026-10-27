@@ -1,6 +1,6 @@
 # Chapter 12: UX, Usability & Team Onboarding
 
-> How to package infrastructure agents so everyone can adopt them safely — without reading an 11-chapter guide first.
+> How to package infrastructure agents so everyone can adopt them safely — without reading a 13-chapter guide first.
 
 ---
 
@@ -43,7 +43,7 @@ The organization is the **top-level isolation boundary**. Everything — credent
 │  Cloud accounts: AWS Prod, AWS Staging, Azure Dev          │
 │  Repositories:   infra-core, app-deploy, data-pipelines    │
 │  Agents:         remediation, drift, PR review, devops     │
-│  Policies:       "encrypt all S3", "tag everything"        │
+│  Policies:       "S3 uses org KMS key", "tag everything"   │
 │  Members:        alice (admin), bob (member), carol        │
 └────────────────────────────────────────────────────────────┘
 
@@ -141,8 +141,8 @@ The primary interface should feel like a conversation, not a CI/CD dashboard. Th
 [Agent: DevOps ▼]  [Repo: infra-core ▼]  [Cloud: AWS ▼]
 
 ┌─────────────────────────────────────────────────────┐
-│  Fix the S3 bucket encryption finding for           │
-│  my-data-bucket                                     │
+│  Move my-data-bucket to our org KMS key             │
+│  (the encryption policy finding)                    │
 │                                          [Send ->]  │
 └─────────────────────────────────────────────────────┘
 ```
@@ -192,20 +192,7 @@ Real-time multi-cursor collaboration is unnecessary — agent sessions are seque
 
 ## Policies as Plain Language
 
-Infrastructure teams already struggle with Rego, Sentinel, and OPA. Agent policies should be in **plain language** that any engineer can read and write:
-
-```markdown
-## Policy: Encryption Requirements
-
-- All S3 buckets MUST have server-side encryption enabled (SSE-KMS preferred)
-- All RDS instances MUST have storage encryption enabled
-- When fixing encryption findings, use the organization's KMS key: alias/infra-key
-- Never disable encryption on existing resources, even temporarily
-```
-
-The agent reads this as part of its context. The policy is versioned, auditable, and understandable by the person who wrote it, the person who reviews it, and the person who debugs why the agent did what it did.
-
-Provide **policy templates** for common standards (encryption, tagging, network access) so teams don't start from blank. Track every policy change with version history and diffs.
+From a usability point of view, the important choice is that teams write agent policies in plain language rather than Rego or Sentinel, so the person who wrote a rule, the person who reviews it, and the person debugging the agent all read the same text. Ship **policy templates** for common standards (encryption, tagging, network access) so teams don't start from a blank page, and show version history with diffs for every change. [Chapter 8](./08-policy-guardrails.md#organization-level-policies) covers how these policies are stored, injected, and turned into enforceable checks.
 
 ---
 
@@ -266,6 +253,17 @@ Notification fatigue kills adoption. Two levels of control:
 
 - **Organization-level**: Admin configures Slack/Teams webhook once, toggles which event types go to the channel. Whole team benefits without individual setup.
 - **Per-user**: Each member controls their own email digest frequency, quiet hours, and per-category toggles (security findings, remediation status, product updates).
+
+---
+
+## Explaining What Autonomous Agents Are Doing
+
+Once agents run on their own, the UI's main job shifts from accepting requests to explaining state. People need to tell at a glance whether the agent is working, waiting for them, or stuck, and why. Four rules came out of our own production operation:
+
+- **Show the agent's own reason when it pauses itself.** If an agent stops because it needs something, display its rationale in plain words ("Blocked: needs read access to the payments subscription"), not an internal status such as `goal_inactive`. An internal status tells the user something stopped; the rationale tells them what to do about it.
+- **Distinguish who paused the work.** "The agent paused this goal" and "the controller paused this goal after three failed attempts" call for different responses. Label agent-initiated and controller-initiated pauses differently, and say which rule triggered a controller pause.
+- **Keep one source of truth for "is the agent on".** During a staged rollout, the autonomy mode a workspace had selected could still be blocked by deployment flags or a workspace allowlist, so the settings page showed a mode as active while another layer blocked it. Compute an effective state on the server from every layer and show that, along with the layer that is blocking it.
+- **Show the real cause of platform errors.** When the model provider rejected requests because the account's credits were exhausted, users saw only a generic "temporarily unavailable" message, which told them nothing about who could fix it. Map known causes (credits or quota exhausted, provider maintenance, credential expired, policy denial) to specific messages, each with the action and the person who can fix it.
 
 ---
 

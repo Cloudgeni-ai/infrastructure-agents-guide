@@ -44,10 +44,10 @@ OpenTelemetry now maintains dedicated [GenAI semantic conventions](https://githu
 |---------|--------|
 | Provider, requested/response model, token usage, finish reason | `gen_ai.*` semantic conventions |
 | Agent/workflow and tool invocation spans | Standard `invoke_agent`, `invoke_workflow`, and `execute_tool` operation names |
-| Session/run, organization, autonomy tier, policy revision, credential scope | Your `agent.*` or product namespace |
+| Session/run, organization, autonomy level and ceiling, policy revision, credential scope | Your `agent.*` or product namespace |
 | Prompts, tool arguments/results, retrieved documents | Redacted references or opt-in content capture, never raw by default |
 
-The GenAI conventions evolve separately from core OpenTelemetry semantic conventions, so pin the convention/schema version used by instrumentation and dashboards. Define a consistent namespace for the remaining domain-specific spans:
+The GenAI conventions evolve separately from core OpenTelemetry semantic conventions and the repository has no tagged releases yet, so pin the commit (or the instrumentation library version) your spans and dashboards were built against, and treat attribute renames as a migration. Define a consistent namespace for the remaining domain-specific spans:
 
 | Category | Attribute | Example Value |
 |----------|-----------|---------------|
@@ -66,8 +66,8 @@ The GenAI conventions evolve separately from core OpenTelemetry semantic convent
 | | `agent.task.priority` | `high` |
 | | `agent.trigger.source` | `schedule` |
 | **Execution** | `agent.iteration.count` | `3` |
-| | `agent.tokens.input` | `12500` |
-| | `agent.tokens.output` | `3200` |
+| | `gen_ai.usage.input_tokens` (standard) | `12500` |
+| | `gen_ai.usage.output_tokens` (standard) | `3200` |
 | | `agent.tool_calls.count` | `8` |
 | **Performance** | `agent.perf.repo_clone_ms` | `4500` |
 | | `agent.perf.pipeline_wait_ms` | `62000` |
@@ -123,8 +123,8 @@ async function processAgentTask(task: AgentTask) {
         const result = await executeAgent(task);
         runSpan.setAttributes({
           'agent.iteration.count': result.iterations,
-          'agent.tokens.input': result.inputTokens,
-          'agent.tokens.output': result.outputTokens,
+          'gen_ai.usage.input_tokens': result.inputTokens,
+          'gen_ai.usage.output_tokens': result.outputTokens,
           'agent.tool_calls.count': result.toolCalls,
         });
         runSpan.end();
@@ -293,8 +293,8 @@ processors:
 exporters:
   otlphttp/tempo:
     endpoint: http://tempo:4318
-  loki:
-    endpoint: http://loki:3100/loki/api/v1/push
+  otlphttp/loki:                 # Loki 3.x ingests OTLP natively; the old `loki` exporter was removed
+    endpoint: http://loki:3100/otlp
   prometheus:
     endpoint: "0.0.0.0:8889"
 
@@ -307,7 +307,7 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [loki]
+      exporters: [otlphttp/loki]
     metrics:
       receivers: [otlp]
       processors: [batch]
@@ -353,6 +353,36 @@ All support OpenTelemetry natively — instrument once with OTel SDK, export to 
 
 ---
 
+## Alert on Failure Patterns, Not Just Volume
+
+Dashboards show load; they rarely show that one kind of work has quietly stopped. We found three separate silent failures in our own platform by writing ad-hoc SQL against run history, each of them weeks old, before we built pattern alerts. The approach that works:
+
+1. **Normalize error messages into classes.** Strip IDs, timestamps, URLs, and numbers so "clone failed for ref abc123" and "clone failed for ref def456" become one class.
+2. **Alert on four signals:**
+
+| Signal | Example threshold |
+|--------|-------------------|
+| New error class | ≥3 occurrences in 1h, none in the previous 7 days |
+| Burst of one class | ≥10 occurrences in 1h |
+| Per-organization failure rate | ≥90% of runs failed over 24h |
+| Overall failure rate | ≥30% of runs failed over 1h |
+
+3. **Evaluate automated work as its own slice.** Compute the same signals separately for runs started by people and runs started by schedules, automated reviews, and goals. An organization whose automated reviews all fail can look healthy overall because its interactive chat works.
+
+### Every Await Needs a Deadline
+
+Every call to an external dependency (model API, Git provider, Redis, the sandbox provider) needs a timeout, including calls to infrastructure you consider local. A single Redis command that never returned left one replica's review dispatcher waiting forever, and 11 PR reviews were silently dropped before anyone noticed. Work that continues after you return HTTP 200 also needs its own "still pending" signal, such as a pending-age metric or a watchdog that flags requests accepted but not started within a few minutes, because the caller has already been told everything is fine.
+
+### One Telemetry Backend for Host and Runtime
+
+If the agent runtime runs as a separate service, pull its logs and traces into the same backend as the host application, joined by the same trace context. Otherwise a failure that starts in the host and surfaces in the runtime (or the reverse) has to be reconstructed by hand from two systems.
+
+### Periodic Jobs Need a Leader
+
+In a service with several replicas, every timer-driven job (canaries, sweeps, digest senders) needs a leader lease so it runs once per interval, not once per replica. Our health canary ran on every replica: it created between 357 and 630 sandbox-booting sessions a day and reported each failure once per replica, which inflated both cost and the apparent failure rate.
+
+---
+
 ## Log Redaction
 
 Agent logs often contain sensitive data (resource IDs, config values, error messages with secrets). Redact by default:
@@ -379,3 +409,7 @@ function redactSensitive(text: string): string {
 ## Next Chapter
 
 [Chapter 10: Autonomous Operations & Notifications →](./10-autonomy-notifications.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*

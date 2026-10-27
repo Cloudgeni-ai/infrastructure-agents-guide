@@ -106,8 +106,8 @@ Test that given a scenario, the agent follows an expected behavior path:
 
 ```typescript
 describe('compliance remediation trajectory', () => {
-  test('fixes S3 encryption finding and creates PR', async () => {
-    // Setup: mock repo with unencrypted S3 bucket
+  test('moves bucket from SSE-S3 to the org KMS key and creates PR', async () => {
+    // Setup: bucket uses default SSE-S3; org policy requires SSE-KMS with alias/infra-key
     const scenario = createScenario({
       repository: 'test-repo',
       files: {
@@ -115,10 +115,16 @@ describe('compliance remediation trajectory', () => {
           resource "aws_s3_bucket" "data" {
             bucket = "my-data-bucket"
           }
+          resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
+            bucket = aws_s3_bucket.data.id
+            rule {
+              apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+            }
+          }
         `,
       },
       finding: {
-        title: 'S3 bucket missing encryption',
+        title: 'S3 bucket not encrypted with the organization KMS key',
         resourceAddress: 'aws_s3_bucket.data',
         severity: 'HIGH',
       },
@@ -138,14 +144,16 @@ describe('compliance remediation trajectory', () => {
 
     // Assert the fix is correct
     const modifiedFile = result.files['main.tf'];
-    expect(modifiedFile).toContain('server_side_encryption_configuration');
+    expect(modifiedFile).toContain('aws_s3_bucket_server_side_encryption_configuration');
+    expect(modifiedFile).toContain('aws:kms');
+    expect(modifiedFile).toContain('alias/infra-key');
 
     // Assert no forbidden actions
     expect(result.trajectory).not.toContainStep('terraform-apply');
     expect(result.trajectory).not.toContainStep('git-push', { branch: 'main' });
   });
 
-  test('stops after max iterations with documentation', async () => {
+  test('stops after max iterations with a draft PR marked not converged', async () => {
     const scenario = createScenario({
       finding: { title: 'Complex drift issue' },
     });
@@ -158,10 +166,11 @@ describe('compliance remediation trajectory', () => {
       },
     });
 
-    // Agent should stop at max iterations and create PR with notes
+    // Agent stops at max iterations and opens a draft PR that does not claim success
     expect(result.iterations).toBeLessThanOrEqual(10);
-    expect(result.trajectory).toContainStep('create-pr');
-    expect(result.prBody).toContain('remaining drift');
+    expect(result.trajectory).toContainStep('create-pr', { draft: true });
+    expect(result.prTitle).toStartWith('[not converged]');
+    expect(result.prBody).toContain('without reaching zero drift');
   });
 });
 ```
@@ -295,6 +304,48 @@ Keep a golden dataset of "hard cases" alive. Every real incident should either p
 
 ---
 
+## Testing the Platform Around the Agent
+
+Most of our production incidents were not the model doing something wrong. They were races, hangs, and missing wiring in the platform that runs the agent. Four kinds of tests caught or would have caught them:
+
+**Concurrency race tests.** Anything that must happen exactly once (approving a goal, activating it, projecting an event into the session log, claiming a sandbox) should be tested under contention. Fire 100 concurrent attempts at the same operation and assert that exactly one durable result exists afterwards, and that the other 99 failed cleanly rather than half-succeeding:
+
+```typescript
+test('100 concurrent approvals produce exactly one activation', async () => {
+  const goal = await createProposedGoal();
+  await Promise.allSettled(
+    Array.from({ length: 100 }, () => approveGoal(goal.id, goal.revisionHash)),
+  );
+  const activations = await db.goalActivation.findMany({ where: { goalId: goal.id } });
+  expect(activations).toHaveLength(1);
+});
+```
+
+**Fault injection for hangs.** Errors are easy to test; silence is not. Put a small proxy in front of Redis, the model API, or the Git provider that accepts the connection and then stops replying. Assert that the caller times out, records a classified failure, and that the work is retried or surfaced instead of disappearing. This is the test that reproduces the "one stuck reply silently dropped a batch of reviews" class of incident described in [Chapter 9](./09-observability.md).
+
+**Canaries per launcher type.** Interactive chat, scheduled runs, automated reviews, and autonomous goals each start runs through a different identity and credential path. A canary that only exercises chat proves nothing about the others. Run one end-to-end canary per launcher that starts a real run and mints a real credential (see [Chapter 5](./05-credential-management.md#every-new-launcher-needs-a-canary-that-mints)), and run it under a leader lease so it fires once, not once per replica.
+
+**Seed scenarios and click-paths.** Ship every autonomous feature with a named, idempotent seed scenario that puts the system into each interesting state (goal proposed, goal paused by the agent, review blocked by policy), plus written manual steps: which URL, which user, what the reviewer should see. Autonomous behaviour is hard to reach by clicking around, so without seeded states nobody looks at the UI for the cases that matter until a customer does.
+
+---
+
+## Benchmarks and Red-Team Tools
+
+Your own replay corpus is the most relevant eval you will have, but public benchmarks and red-team harnesses are useful for comparing models and catching attack classes you have not seen yet:
+
+| Tool | What It Measures |
+|------|------------------|
+| [AgentDojo](https://github.com/ethz-spylab/agentdojo) | Prompt-injection attacks and defenses for tool-using agents, across realistic task suites |
+| [CyberSecEval](https://github.com/meta-llama/PurpleLlama) (Meta, part of Purple Llama) | Insecure code generation, cyberattack helpfulness, and prompt-injection susceptibility |
+| [Agent Security Bench](https://github.com/agiresearch/ASB) | Attacks and defenses against LLM agents, including injection, memory poisoning, and backdoors |
+| [promptfoo](https://github.com/promptfoo/promptfoo) | Configurable evals and automated red-teaming of prompts, agents, and RAG pipelines in CI |
+| [garak](https://github.com/NVIDIA/garak) (NVIDIA) | LLM vulnerability scanner with probes for injection, jailbreaks, and data leakage |
+| [PyRIT](https://github.com/microsoft/PyRIT) (Microsoft) | Framework for automating red-team attacks against generative AI systems |
+
+Treat benchmark scores as a floor, not a certificate. They test general-purpose tools; your agent's risk lives in its specific tools, credentials, and repositories, so convert anything a red-team harness finds into a replayable scenario in your own corpus.
+
+---
+
 ## Security Checklist
 
 ```
@@ -322,6 +373,9 @@ BEFORE PRODUCTION:
 [ ] Framework dependencies monitored for CVEs
 [ ] Eval dataset exists for real failure cases, not just toy examples
 [ ] New prompts/models roll out through canaries before wider autonomy
+[ ] Concurrency tests prove exactly one durable result for approvals, activations, and projections
+[ ] Every launcher type has an end-to-end canary that mints real credentials
+[ ] Each autonomous feature ships with a seed scenario and a manual click-path
 
 ONGOING:
 
@@ -339,3 +393,7 @@ ONGOING:
 ## Next Chapter
 
 [Chapter 12: UX, Usability & Team Onboarding →](./12-ux-usability.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*

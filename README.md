@@ -6,13 +6,13 @@
 
 > How to design, build, and operate AI agents for infrastructure teams — safely.
 
-AI agents can write IaC, fix compliance findings, detect drift, review PRs, and respond to incidents — all autonomously. But autonomy without guardrails is a liability. Agents that can `terraform apply` can also `terraform destroy`. Agents that read configs can leak secrets. Agents that loop can burn budgets.
+AI agents can write IaC, fix compliance findings, detect drift, review PRs, and respond to incidents — all autonomously. Autonomous here means the agent is capable of doing the whole job, and your team decides how much of it the agent is allowed to do. Autonomy without guardrails is a liability. Agents that can `terraform apply` can also `terraform destroy`. Agents that read configs can leak secrets. Agents that loop can burn budgets.
 
 **This guide covers every architectural decision** you need to make when building infrastructure agents — with real patterns, code snippets, multiple alternatives, and the risk framework to evaluate your choices.
 
 If you're looking for the broader, non-infrastructure version, see the [Enterprise Agent Guide](https://github.com/Cloudgeni-ai/enterprise-agent-guide).
 
-If you want to see these patterns implemented in a real product, see [OpenGeni](https://opengeni.ai) and its [open-source repository](https://github.com/Cloudgeni-ai/opengeni), which packages this guide's architecture into a proven stack for infrastructure agents.
+If you want to see these patterns implemented in a real product, see [Opengeni](https://opengeni.ai) and its [open-source repository](https://github.com/Cloudgeni-ai/opengeni), which packages this guide's architecture into a proven stack for infrastructure agents.
 
 ---
 
@@ -32,26 +32,27 @@ If you want to see these patterns implemented in a real product, see [OpenGeni](
 | 1 | [Architecture Overview](./01-architecture.md) | The six planes of an infra-agent system |
 | 2 | [Agent Runtime & Orchestration](./02-agent-runtime.md) | LLM runtimes (Claude Agent SDK, OpenAI, LangChain, custom), task queuing, worker isolation |
 | 3 | [Tools, CLIs & Skills](./03-tools-skills.md) | CLI tooling, skills, managed subagents, MCP, and capability management |
-| 4 | [Sandboxed Execution](./04-sandboxed-execution.md) | Container isolation with Docker, Modal, Azure Container Apps |
+| 4 | [Sandboxed Execution](./04-sandboxed-execution.md) | Container isolation, managed sandbox APIs, egress controls |
 | 5 | [Credential Management](./05-credential-management.md) | Short-lived tokens, vault patterns, blast radius control |
 | 6 | [The Data Plane](./06-data-plane.md) | Infrastructure knowledge layer, resource graphs, context serialization |
 | 7 | [Change Control & GitOps](./07-change-control.md) | PR-based workflows, drift verification, validation loops |
-| 8 | [Policy & Guardrails](./08-policy-guardrails.md) | Tool restrictions, approval gates, autonomy tiers |
+| 8 | [Policy & Guardrails](./08-policy-guardrails.md) | Tool restrictions, autonomy ceilings, governed merge/apply gates, receipts |
 | 9 | [Observability & Audit](./09-observability.md) | OpenTelemetry, action trails, debugging agent failures |
-| 10 | [Autonomous Operations & Notifications](./10-autonomy-notifications.md) | Scheduling, autonomous agents, notification routing, escalation chains |
+| 10 | [Autonomous Operations & Notifications](./10-autonomy-notifications.md) | The autonomy dial, signals and goals, running unattended agents, notifications |
 | 11 | [Testing & Hardening](./11-testing-hardening.md) | Trajectory tests, prompt injection defense, security benchmarks |
-| 12 | [UX & Usability](./12-ux-usability.md) | Multi-tenancy, RBAC, onboarding, team collaboration, error prevention |
-| 13 | [Risk Framework & Checklists](./13-risk-framework.md) | Decision matrices, compliance mapping, go-live checklists |
+| 12 | [UX, Usability & Team Onboarding](./12-ux-usability.md) | Multi-tenancy, RBAC, onboarding, team collaboration, error prevention |
+| 13 | [Risk Framework & Checklists](./13-risk-framework.md) | Autonomy promotion ladder, compliance and regulation mapping, go-live checklists |
 
 ---
 
 ## Core Principles
 
-1. **Agents Default to PR-First Change Control** — Every infrastructure change flows through a pull request. The agent produces diffs, not deployments. If you support direct execution at all, treat it as a separate break-glass architecture with separate credentials, approval paths, and audit controls.
+1. **Agents Default to PR-First Change Control** — Every infrastructure change flows through a pull request. The agent produces diffs, not deployments. When a team lets eligible changes land without a human click, a server-owned gate merges the PR and the normal pipeline applies it; the agent itself never merges or applies. If you support direct execution at all, treat it as a separate break-glass architecture with separate credentials, approval paths, and audit controls.
 2. **Least Privilege by Default** — Agents get the minimum credentials and tool access needed. Privileges are scoped, time-limited, and auditable.
 3. **Observability Is Not Optional** — Every tool call, credential request, and decision point is logged and traced end-to-end.
 4. **Fail Safe, Not Fail Open** — When in doubt, the agent stops and asks a human. Timeouts and policy gates are structural — not suggestions.
 5. **The Agent Is Not Special** — Agent-initiated changes go through the same review, CI, and deployment pipelines as human-initiated changes.
+6. **Autonomy Is a Dial, Earned on Evidence** — How far an agent may go is a setting the team chooses per use case, not a switch the agent flips. Start low, promote one action class at a time on measured results, and keep a tested stop button. Whatever the level, a person should end up with one decision: accept this change or not.
 
 ---
 
@@ -66,7 +67,7 @@ If you want to see these patterns implemented in a real product, see [OpenGeni](
                              │
                   ┌──────────▼──────────┐
                   │    POLICY PLANE     │  ← What agents CAN do
-                  │  (rules, approvals) │
+                  │ (autonomy, gates)   │
                   └──────────┬──────────┘
                              │
             ┌────────────────▼────────────────┐
@@ -102,9 +103,20 @@ This guide doesn't prescribe a single stack. For each architectural layer, we co
 | **Change Control** | GitHub Actions, GitLab CI, Azure Pipelines, Atlantis, Spacelift |
 | **Observability** | OpenTelemetry + GenAI semantic conventions, Grafana, Datadog, Dash0, New Relic |
 | **Interoperability** | MCP (stateless core + extensions), A2A 1.0 |
-| **Notifications** | Slack, Microsoft Teams, PagerDuty, Opsgenie, email, webhooks |
-| **Scheduling** | Cron (systemd/k8s), Temporal, AWS EventBridge, Azure Timer Triggers |
+| **Notifications** | Slack, Microsoft Teams (Workflows), PagerDuty, Jira Service Management, email, webhooks |
+| **Scheduling** | Cron (systemd/k8s), Temporal, AWS EventBridge Scheduler, Azure Timer Triggers, durable agent goals |
 | **State Storage** | PostgreSQL, Redis, Azure Blob, S3, SQLite |
+
+---
+
+## What Changed in October 2026
+
+This edition folds in what we learned from running autonomous agents in production between August and October 2026:
+
+- **Autonomy, rewritten.** The three different tier tables in earlier chapters are replaced by one model: four levels defined by what a person still decides (Reactive, Propose, Governed, Goal-driven), enforced by runtime ceilings (Off, Observe, Propose, Governed) with a production opt-in and an emergency stop. See Chapters [1](./01-architecture.md#core-concept-the-autonomy-dial), [8](./08-policy-guardrails.md#autonomy-ceilings-in-practice), [10](./10-autonomy-notifications.md#autonomy-is-a-dial) and [13](./13-risk-framework.md#autonomy-decision-matrix).
+- **Governed actions.** How eligible changes can land without a human click, through server-owned merge and apply gateways with blast-radius limits, verification, exact rollback and append-only receipts ([Chapter 8](./08-policy-guardrails.md#governed-actions)).
+- **Signals, goals and running unattended.** Signal eligibility rules, the goal lifecycle, cadence budgets, one owner per goal across replicas, and the identity problems unattended agents run into ([Chapter 10](./10-autonomy-notifications.md#from-signals-to-goals)), each with the production incident that taught it.
+- **Operational lessons** across credentials, sandboxing, change control, observability and testing, plus corrections where the landscape moved (retired models, MCP server deprecations, OWASP 2025, Rego v1, Teams webhooks, the EU AI Act timeline).
 
 ---
 
@@ -126,7 +138,7 @@ This guide is built by the team at **[Cloudgeni](https://cloudgeni.ai)**, where 
 
 Every pattern here comes from running these systems in production. We open-sourced it because we kept answering the same architectural questions — writing them down once seemed more useful.
 
-We also released **[OpenGeni](https://opengeni.ai)** as a concrete implementation of this guide: a production-oriented infrastructure-agent stack with source available at [Cloudgeni-ai/opengeni](https://github.com/Cloudgeni-ai/opengeni).
+We also released **[Opengeni](https://opengeni.ai)** as a concrete implementation of this guide: a production-oriented infrastructure-agent stack with source available at [Cloudgeni-ai/opengeni](https://github.com/Cloudgeni-ai/opengeni).
 
 ---
 

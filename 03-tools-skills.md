@@ -33,13 +33,13 @@ Giving an agent unrestricted `bash` is the simplest approach and the most danger
 
 **1. Allowlisted commands**: Only permit specific binaries. The agent can run `terraform plan` but not arbitrary `curl` or `bash -c`.
 
-**2. Credential injection via environment**: CLIs read credentials from environment variables. Inject short-lived tokens at runtime rather than baking anything into the image:
+**2. Credential injection via environment**: CLIs read credentials from environment variables. Use this only for short-lived tokens injected at runtime, never for long-lived keys or client secrets, and never bake anything into the image:
 
 ```
-AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_SESSION_TOKEN  (STS)
-AZURE_CLIENT_ID + AZURE_CLIENT_SECRET + AZURE_TENANT_ID       (Service Principal)
-GOOGLE_APPLICATION_CREDENTIALS                                  (Service Account)
-GITHUB_TOKEN                                                    (Installation token)
+AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_SESSION_TOKEN  (STS session, minutes to hours)
+AZURE_CLIENT_ID + AZURE_TENANT_ID + AZURE_FEDERATED_TOKEN_FILE (workload identity federation)
+GOOGLE_APPLICATION_CREDENTIALS                                  (short-lived token or external-account config, not a key file)
+GITHUB_TOKEN                                                    (installation token, 1h)
 ```
 
 See [Chapter 5: Credential Management](./05-credential-management.md) for the full credential broker pattern.
@@ -101,7 +101,7 @@ Beyond CLIs, there are several ways to give agents higher-level, safer capabilit
 
 ### 1. Skills as Files (Document-First)
 
-Write skills as files that the agent reads and executes. Popularized by Claude Code's `.claude/skills/` convention:
+Write skills as files that the agent reads and executes. The layout below follows the [Agent Skills](https://agentskills.io) open standard, which Claude Code, Codex and other runtimes load from their own skill directories (for example `.claude/skills/`):
 
 ```
 skills/
@@ -163,12 +163,17 @@ For multi-tenant products, the same pattern applies even if you don't use Claude
 The open standard for connecting agents to external tools and data sources. In practice, MCP has grown from "typed tool bridge" into a broader interoperability layer for **tools, resources, prompts, and optional extensions**. MCP servers are typically exposed over stdio or HTTP transports:
 
 ```typescript
-import { McpServer } from '@modelcontextprotocol/sdk/server';
+import { McpServer } from '@modelcontextprotocol/server';
+import * as z from 'zod/v4';
 
-const server = new McpServer({ name: 'infra-tools' });
+const server = new McpServer({ name: 'infra-tools', version: '1.0.0' });
 
-server.tool('terraform_plan',
-  { pipelineId: z.string() },
+server.registerTool(
+  'terraform_plan',
+  {
+    description: 'Trigger a Terraform plan for a registered pipeline',
+    inputSchema: z.object({ pipelineId: z.string() }),
+  },
   async ({ pipelineId }) => {
     const result = await triggerPlan(pipelineId);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
@@ -217,13 +222,14 @@ Use **MCP** when:
 - you are exposing tools, resources, or prompts to a model runtime
 - calls are narrow, typed, and subordinate to the calling agent
 
-In practice, many infra systems use **MCP inside a worker** and **A2A across product boundaries**.
+In practice, many infra systems use **MCP inside a worker** and **A2A across product boundaries**. Both protocols, along with [AGENTS.md](https://agents.md) (a plain markdown file of repository instructions for coding agents), are now hosted by the Linux Foundation's [Agentic AI Foundation](https://aaif.io), which makes them reasonable long-term bets. Put repository conventions in `AGENTS.md` so every runtime reads the same instructions, and keep task-specific procedures in skills.
 
 ### 5. LangChain / LangGraph Tools
 
-Python-native tool registration with decorators:
+Tool registration with decorators (Python shown; LangChain.js has an equivalent `tool()` helper):
 
 ```python
+from langchain.agents import create_agent
 from langchain.tools import tool
 
 @tool
@@ -232,11 +238,11 @@ def terraform_plan(pipeline_id: str) -> str:
     result = requests.post(f"{API_URL}/run-pipeline", json={"id": pipeline_id})
     return result.json()
 
-agent = create_react_agent(llm, [terraform_plan, ...])
+agent = create_agent(llm, tools=[terraform_plan, ...])
 ```
 
-**Pros**: Simple Python-native API; large ecosystem; works with any LLM.
-**Cons**: Python-only; tool docs limited to docstrings; no built-in isolation.
+**Pros**: Simple API in Python and TypeScript; large ecosystem; works with any LLM.
+**Cons**: Tool docs limited to docstrings or descriptions; no built-in isolation.
 
 ### 6. OpenAI-Style Function Calling
 
@@ -268,11 +274,11 @@ const tools = [{
 |----------|--------------|--------|-----------|-----------|
 | **CLI tools** (direct) | Man pages / `--help` | None (strings) | Sandbox-level | Entire IaC ecosystem |
 | **Typed CLI wrappers** | Code comments | Strong | Sandbox-level | Build your own |
-| **Skills as files** | Rich (full markdown) | Via code | Per-file | Growing (Claude, community) |
+| **Skills as files** | Rich (full markdown) | Via code | Per-file | Growing (open standard, many runtimes) |
 | **Subagents / agent roles** | Role prompt + frontmatter/config | Via configured tools | Per-agent/session | Growing in Claude-style runtimes |
 | **MCP** | Schema + description | Strong (JSON Schema) | Per-server/request | Mature core; extensions vary |
 | **A2A 1.0** | Agent Cards + task/artifact schema | Strong | App boundary | Versioned interoperability standard |
-| **LangChain tools** | Docstrings | Python types | None (same process) | Largest |
+| **LangChain tools** | Docstrings | Python/TS types | None (same process) | Largest |
 | **Function calling** | Schema only | JSON Schema | Your responsibility | Universal |
 
 ### Combining Approaches: Subagents + Skills + MCP + A2A + CLIs
@@ -309,7 +315,7 @@ interface EffectiveToolPolicy {
 
 Every tool call, approval, retry, and recovered run must bind to that revision. Mid-session policy changes create a new audited revision; they do not silently rewrite what an already-approved attempt was allowed to do. Credentials for third-party MCP servers should be write-only to users after creation, rotatable, scoped per session or connection, and redacted at both the tool boundary and persistence boundary.
 
-This is one of the most useful patterns to backport from [OpenGeni's MCP surfaces](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/mcp-surfaces.md): tool discovery, tool authorization, credential authority, and human approval are separate decisions even when the UI presents one catalog.
+This is one of the most useful patterns to backport from [Opengeni's MCP surfaces](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/mcp-surfaces.md): tool discovery, tool authorization, credential authority, and human approval are separate decisions even when the UI presents one catalog.
 
 ---
 
@@ -326,7 +332,7 @@ const AGENT_CONFIGS = {
     producesCodeChanges: false,
   },
   'compliance-remediation': {
-    allowedTools: [],  // All tools (needs to write code, run plans, create PRs)
+    allowedTools: ['*'],  // All tools (needs to write code, run plans, create PRs)
     maxTurns: 50,
     producesCodeChanges: true,
   },
@@ -338,6 +344,8 @@ const AGENT_CONFIGS = {
 };
 ```
 
+Use `['*']` to mean all tools and treat an empty list as no tools, the same convention as [Chapter 8](./08-policy-guardrails.md#tool-allowdeny-lists). An empty list that silently means "everything" is the kind of default that turns a configuration typo into full access.
+
 The key principle: **start restrictive, expand as needed.** A drift detection agent doesn't need git push. A PR reviewer doesn't need cloud credentials.
 
 ---
@@ -348,7 +356,7 @@ Vendors, cloud providers, and the community have published production-grade skil
 
 ### The Agent Skills Format
 
-The format popularized by [Anthropic's skills repository](https://github.com/anthropics/skills) is structurally simple: a directory with a required `SKILL.md` file containing YAML frontmatter (name, description) plus optional scripts and assets. The frontmatter follows a **three-level progressive disclosure** model:
+[Agent Skills](https://agentskills.io) began at Anthropic and is now an open standard with its own specification; MCP also has an official Skills extension so a server can ship skills over the same connection as its tools. The format is structurally simple: a directory with a required `SKILL.md` file containing YAML frontmatter (name, description) plus optional scripts and assets. The frontmatter follows a **three-level progressive disclosure** model:
 
 ```yaml
 ---
@@ -382,13 +390,14 @@ Version the resolved skill and subagent set, cache it, and make the active manif
 
 #### HashiCorp — [hashicorp/agent-skills](https://github.com/hashicorp/agent-skills)
 
-The most complete vendor skill set for Terraform. Organized into three plugin bundles:
+The most complete vendor skill set for Terraform. It is organized into two plugins, `plugins/terraform` and `plugins/packer`, each installable in Claude Code and Codex:
 
 | Plugin | Skills Included | Focus |
 |--------|----------------|-------|
-| `terraform-code-generation` | `terraform-style-guide`, `terraform-test`, `azure-verified-modules` | Writing correct HCL, testing |
-| `terraform-module-generation` | `refactor-module`, `terraform-stacks` | Module extraction, HCP Terraform Stacks |
-| `terraform-provider-development` | `new-terraform-provider`, `provider-actions`, `provider-resources` | Building Terraform providers |
+| `terraform` (authoring) | `terraform-style-guide`, `terraform-test`, `azure-verified-modules`, `refactor-module`, `terraform-stacks` | Writing correct HCL, testing, module extraction, HCP Terraform Stacks |
+| `terraform` (policy and import) | `terraform-policy`, `terraform-search-import` | Policy authoring, discovering and importing existing resources |
+| `terraform` (providers) | `new-terraform-provider`, `provider-resources`, `provider-actions`, `provider-ephemeral-resources`, `provider-test-patterns`, and related `provider-*` skills | Building and testing Terraform providers |
+| `packer` | `aws-ami-builder`, `azure-image-builder`, `windows-builder`, `push-to-registry` | Building and publishing machine images |
 
 The `refactor-module` skill is notable because it covers **state migration patterns** (`moved` blocks, `terraform state mv`) — high blast radius if executed incorrectly. The `terraform-stacks` skill explicitly recommends **workload identity (OIDC)** and ephemeral tokens.
 
@@ -416,19 +425,19 @@ Provides live access to the Terraform ecosystem via MCP:
 
 #### AWS — [awslabs/mcp](https://github.com/awslabs/mcp)
 
-The AWS MCP monorepo contains three IaC-relevant servers:
+The AWS MCP monorepo removed its deprecated `cfn-mcp-server` and `terraform-mcp-server` in April 2026 and marks `ccapi-mcp-server` (Cloud Control API CRUD) as deprecated. AWS points IaC users to `aws-iac-mcp-server`, and Terraform users to HashiCorp's official Terraform MCP server above. AWS also describes its newer Agent Toolkit for AWS as the successor to the awslabs servers, so check the repository before pinning anything. The IaC-relevant servers today:
 
 | Server | Capabilities | Risk Level |
 |--------|-------------|------------|
 | **aws-iac-mcp-server** | CloudFormation/CDK docs search, template validation, compliance checks, deployment troubleshooting | Low (read-only, guidance) |
-| **cfn-mcp-server** | Direct CRUD of 1,100+ AWS resource types via Cloud Control API, IaC Generator | **Very High** (can create/delete resources) |
-| **terraform-mcp-server** | AWS Terraform best practices, Checkov scanning, `terraform plan/apply/destroy` execution | **Very High** (can run apply/destroy) |
+| **aws-api-mcp-server** | Runs arbitrary AWS CLI commands with whatever credentials it is given | **Very High** (any API call the role allows) |
+| **ccapi-mcp-server** (deprecated) | Direct CRUD of AWS resource types via Cloud Control API | **Very High** (can create/delete resources) |
 
-> **Critical distinction**: `aws-iac-mcp-server` is guidance-only and safe. `cfn-mcp-server` and `terraform-mcp-server` can make destructive changes — treat them as Tier 3/4 tools requiring explicit approval gates.
+> **Critical distinction**: `aws-iac-mcp-server` is guidance-only and low risk. `aws-api-mcp-server` is effectively a shell for the AWS API: its blast radius is exactly the IAM role you hand it, so give it a read-only role or route mutating calls through the same approval gates as any tool that can change live infrastructure. Do not adopt the deprecated `ccapi-mcp-server` for new work.
 
 #### Pulumi MCP Server
 
-Available as `@pulumi/mcp-server` on npm and `docker pull mcp/pulumi`. Interacts with Pulumi Cloud for stack preview, deploy, output retrieval, and registry queries. Requires OAuth flow and Pulumi Access Token with org scoping.
+Pulumi's documented path is a [hosted remote MCP server](https://www.pulumi.com/docs/ai/mcp-server/) at `https://mcp.ai.pulumi.com/mcp`, connected over HTTP with an OAuth-style browser flow in which you authenticate and pick a Pulumi organization. It interacts with Pulumi Cloud for stack preview, deploy, output retrieval, and registry queries. A local stdio server (`@pulumi/mcp-server` on npm, driven by a `PULUMI_ACCESS_TOKEN`) still exists for offline or self-managed setups; scope that token to one organization and treat it like any other long-lived secret.
 
 #### Other Official Infrastructure Servers
 
@@ -448,7 +457,7 @@ Treat a vendor badge as provenance, not blanket approval. Enumerate the exact to
 | [akin-ozer/cc-devops-skills](https://github.com/akin-ozer/cc-devops-skills) | Multi-tool DevOps | Skills spanning Terraform, Terragrunt, Ansible, Kubernetes, Helm, CI/CD, and PromQL |
 | [terramate-io/agent-skills](https://github.com/terramate-io/agent-skills) | Terraform, OpenTofu, Terramate | State splitting, drift reconciliation, stack management |
 | [dirien/claude-skills](https://github.com/dirien/claude-skills) | Pulumi (TS/Go/Python) | Pulumi community skills emphasizing ESC + OIDC patterns |
-| [sigridjineth/hello-ansible-skills](https://github.com/sigridjineth/hello-ansible-skills) | Ansible | Playbook development, debugging, shell-to-ansible conversion |
+| [realsigridjin/hello-ansible-skills](https://github.com/realsigridjin/hello-ansible-skills) | Ansible | Playbook development, debugging, shell-to-ansible conversion |
 
 ### Curated Skill Directories
 
@@ -478,9 +487,9 @@ Not all skills carry equal risk. Map each to the right controls:
               ├──────────────────────────────┼──────────────────────────────────┤
               │                              │                                  │
   EXECUTION   │  MEDIUM RISK                 │  VERY HIGH RISK                  │
-  (tool       │  terraform-mcp (registry)    │  cfn-mcp-server (CRUD 1100+)    │
-   calls)     │  pulumi-mcp (query stacks)   │  terraform-mcp (apply/destroy)  │
-              │  checkov scanning            │  aws terraform-mcp (apply)       │
+  (tool       │  terraform-mcp (registry)    │  aws-api-mcp-server (any CLI)    │
+   calls)     │  pulumi-mcp (query stacks)   │  ccapi-mcp-server (CRUD, depr.)  │
+              │  checkov scanning            │  terraform-mcp (HCP TF runs)     │
               │                              │                                  │
               │  Controls: + credential      │  Controls: + sandbox + approval  │
               │  scoping + audit             │  gates + separate prod creds     │
@@ -539,3 +548,7 @@ This matches how the vendor skills are designed: HashiCorp's skills produce guid
 ## Next Chapter
 
 [Chapter 4: Sandboxed Execution →](./04-sandboxed-execution.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*

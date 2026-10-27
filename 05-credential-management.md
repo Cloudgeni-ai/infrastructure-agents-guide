@@ -8,7 +8,7 @@
 
 > **Agents never hold long-lived credentials. Ever.**
 
-No API keys in environment variables. No service principal secrets in config files. No SSH keys on disk. The agent requests credentials just-in-time from a broker, gets a short-lived token scoped to the minimum required permissions, and the token expires automatically.
+No long-lived API keys in environment variables. No service principal secrets in config files. No SSH keys on disk. The agent requests credentials just-in-time from a broker, gets a short-lived token scoped to the minimum required permissions, and the token expires automatically. Injecting that short-lived token through an environment variable is fine (CLIs expect it, see [Chapter 3](./03-tools-skills.md#making-cli-access-safe)); putting a key that outlives the task there is not.
 
 Get this wrong and nothing else matters.
 
@@ -94,21 +94,31 @@ async function generateAwsToken(
 }
 ```
 
-### Azure: OAuth Token Exchange
+### Azure: Workload Identity Federation and OAuth
+
+Prefer workload identity federation over client secrets. The broker's own identity is federated from its runtime (Kubernetes, a managed identity, or a CI OIDC issuer), so there is no app secret to store or rotate, and customer tenants trust that federated identity directly.
 
 ```typescript
+import { readFile } from 'node:fs/promises';
 import { ConfidentialClientApplication } from '@azure/msal-node';
+import { WorkloadIdentityCredential } from '@azure/identity';
+
+// The broker proves its identity with a federated token issued by its
+// runtime. No client secret exists anywhere in the system.
+const brokerAssertion = () =>
+  readFile(process.env.AZURE_FEDERATED_TOKEN_FILE!, 'utf8');
 
 async function generateAzureToken(
   integration: AzureIntegration,
   scope: string = 'https://management.azure.com/.default'
 ): Promise<AzureToken> {
-  // For OAuth integrations: use refresh token
+  // OAuth integrations (a user granted delegated access): redeem the
+  // stored refresh token, authenticating the app with the federated assertion
   if (integration.authMethod === 'OAuth') {
     const msalClient = new ConfidentialClientApplication({
       auth: {
         clientId: AZURE_APP_CLIENT_ID,
-        clientSecret: AZURE_APP_CLIENT_SECRET,
+        clientAssertion: brokerAssertion,
         authority: `https://login.microsoftonline.com/${integration.tenantId}`,
       },
     });
@@ -117,6 +127,7 @@ async function generateAzureToken(
       refreshToken: integration.refreshToken,  // Stored encrypted
       scopes: [scope],
     });
+    if (!result) throw new Error('Token exchange returned no result');
 
     return {
       accessToken: result.accessToken,
@@ -125,13 +136,18 @@ async function generateAzureToken(
     };
   }
 
-  // For service principal: client credentials flow
-  // Still produces a short-lived token
-  const result = await msalClient.acquireTokenByClientCredential({
-    scopes: [scope],
+  // App-only integrations: federate into the customer's tenant
+  const credential = new WorkloadIdentityCredential({
+    tenantId: integration.tenantId,
+    clientId: AZURE_APP_CLIENT_ID,
   });
+  const token = await credential.getToken(scope);
 
-  return { accessToken: result.accessToken, expiresOn: result.expiresOn };
+  return {
+    accessToken: token.token,
+    expiresOn: new Date(token.expiresOnTimestamp),
+    subscriptionId: integration.subscriptionId,
+  };
 }
 ```
 
@@ -171,6 +187,8 @@ Key responsibilities:
 2. **Enforce scope limits** — check that the requested permissions don't exceed policy limits
 3. **Generate short-lived tokens** — exchange long-lived credentials (in the vault) for short-lived tokens (given to the agent)
 4. **Audit every issuance** — log which agent, which session, which scope, and when the token expires
+
+Cloud providers now ship this pattern as products: [Microsoft Entra Agent ID](https://learn.microsoft.com/en-us/entra/agent-id/what-is-microsoft-entra-agent-id) gives each agent its own directory identity, and [AWS AgentCore Identity](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity.html) brokers inbound and outbound credentials for agents. They are useful building blocks, but you still need the run-level checks below, because the provider cannot know which repositories or integrations a particular run was approved to touch.
 
 ```typescript
 // Example credential broker handler
@@ -295,6 +313,32 @@ The goal: **an admin configures scopes once, agents request credentials by inten
 
 ---
 
+## Lessons from Unattended Runs
+
+Interactive sessions hide credential bugs, because a person notices the failure and retries. The lessons below come from running scheduled, review, and goal-driven agents in production between August and October 2026.
+
+### Freeze Access at the Start of a Run
+
+When a run starts, record exactly which repositories and integrations it may use, and store a fingerprint (a hash of that set and its policy revision) with the run. Re-check the fingerprint when the run is dispatched to a worker and again at every credential mint. Live state may only narrow access: if an admin removes a repository mid-run, the next mint for it fails; if an admin adds one, the running agent does not gain it. A change that would widen access starts a new run with its own fingerprint rather than widening the old one.
+
+### Only Attach What the Provider Can Scope
+
+Attach a repository to unattended or continuous work only if its Git provider can mint a token restricted to that run's policy. Some providers' tokens cover every repository the connection can see, which defeats the per-run boundary. When the broker refuses such a request, report it as a setup gap the user must fix. Do not classify it as a transient error: one of our controllers retried a correct policy denial indefinitely, burning runs on a request that could never succeed.
+
+### Token Scopes Rarely Match Intent
+
+Provider permissions are coarser than the actions you mean to allow. On GitHub, `contents: write` (needed to push a branch) also allows merging, and `pull_requests: write` allows editing and reviewing pull requests the agent did not create. "The agent may open PRs but never merge" therefore has to be enforced twice: by the server that executes git operations on the agent's behalf, and by branch protection that requires a human or a server-side gate to merge. With several Git connections in one workspace, configure a credential helper per repository so each remote gets its own token; one ambiguous global token will eventually be sent to the wrong host or used with the wrong scope.
+
+### Re-home Automations When People Leave
+
+Integrations and automations are often created by a person, and their credentials may be bound to that person's membership. When the member leaves, re-home what they owned to an admin and write an audit record of the transfer. Without that step, service work fails silently: we found weeks of failed automated reviews in one organization, all traced to an integration whose creator had left.
+
+### Every New Launcher Needs a Canary That Mints
+
+We added a new class of unattended launcher for autonomous remediation and forgot to add it to the credential broker's allow-list of callers. Every run it started failed at the first turn for three weeks, and nothing alerted, because each failure looked like an ordinary agent error. Each launcher type (interactive chat, schedule, automated review, autonomous goal) has its own identity and credential path, so each needs its own end-to-end canary that starts a real run and actually mints a credential. See [Chapter 11](./11-testing-hardening.md) and [Chapter 9](./09-observability.md).
+
+---
+
 ## Secret Storage Alternatives
 
 ### HashiCorp Vault
@@ -381,15 +425,19 @@ const item = await response.json();
 
 | Anti-Pattern | Why It's Dangerous | Better Approach |
 |-------------|-------------------|-----------------|
-| API keys in env vars | Visible to all processes, logged in crashes | Credential broker with short-lived tokens |
+| Long-lived API keys in env vars | Visible to all processes, logged in crashes | Credential broker with short-lived tokens |
 | Service principal secrets in agent config | Stolen by infostealers, leaked in serialization | Managed identity or vault-backed generation |
 | Long-lived OAuth tokens | Wide blast radius if compromised | Refresh token in vault, short-lived access tokens |
 | Shared credentials across agents | One compromised agent = all agents compromised | Per-agent, per-session token issuance |
 | Credentials in LLM prompts | Model can repeat them in output | Inject into tool environment, not prompt text |
-| No credential expiry | Compromised tokens live forever | 1h TTL with no renewal option |
+| No credential expiry | Compromised tokens live forever | Short TTL (1h max); the same token is never refreshed or extended, and long sessions get a newly issued token from the broker after a fresh policy check |
 
 ---
 
 ## Next Chapter
 
 [Chapter 6: The Data Plane →](./06-data-plane.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*

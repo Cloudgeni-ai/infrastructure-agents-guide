@@ -1,6 +1,6 @@
 # Chapter 8: Policy & Guardrails
 
-> Tool restrictions, approval gates, autonomy tiers, policy-as-code generation, and organizational policy enforcement.
+> Tool restrictions, autonomy ceilings, governed actions, approval gates, policy-as-code generation, and organizational policy enforcement.
 
 ---
 
@@ -37,13 +37,14 @@ This chapter covers the full policy stack: from structural constraints the agent
 │  Layer 3: RUNTIME POLICY ENGINE                    │
 │  Evaluated at dispatch and tool-call time.         │
 │  • Tool allow/deny lists                           │
-│  • Autonomy tier enforcement                       │
+│  • Autonomy ceiling enforcement                    │
 │  • Human approval requirements                     │
 │  • Budget/rate limits                              │
+│  • Server-owned gateways for governed actions      │
 └────────────────────────────────────────────────────┘
 ```
 
-Layer 2 (prompt rules) is the weakest — models can be manipulated. Layers 1 and 3 must catch what Layer 2 misses. But Layer 2 has a unique superpower: it's the only layer that understands *intent*. The model can read a policy like "all S3 buckets must be encrypted" and generate the Terraform, the Azure Policy definition, or the OPA rule to enforce it structurally. This is how soft guardrails become hard guardrails — the agent itself closes the gap.
+Layer 2 (prompt rules) is the weakest — models can be manipulated. Layers 1 and 3 must catch what Layer 2 misses. But Layer 2 has a unique superpower: it's the only layer that understands *intent*. The model can read a policy like "all S3 buckets must use our KMS key" and generate the Terraform, the Azure Policy definition, or the OPA rule to enforce it structurally. This is how soft guardrails become hard guardrails — the agent itself closes the gap.
 
 ---
 
@@ -128,44 +129,122 @@ Do not treat managed agent definitions as the only enforcement point. The runtim
 
 ---
 
-## Autonomy Tiers in Practice
+## Autonomy Ceilings in Practice
 
-Define graduated levels of autonomy. A five-tier model covers most use cases:
+[Chapter 10](./10-autonomy-notifications.md#autonomy-is-a-dial) describes autonomy as four levels, defined by what the human still decides. This section is the other side of the same dial: the **ceiling** the runtime enforces, whatever the agent was asked to do or decides to try. A ceiling is set per workspace (or per environment) by an admin, it starts at Off, and every change to it is an audit event.
 
-| Tier | Name | What the Agent Can Do | Approval Required |
-|------|------|----------------------|-------------------|
-| 0 | **Observe** | Read-only. Analyze, summarize, recommend. | N/A |
-| 1 | **Recommend** | Suggest changes but not execute them. | N/A |
-| 2 | **Draft** | Create PRs. No direct execution. | PR review only |
-| 3 | **Validate** | Execute in isolated sandbox, run plans/what-if/tests, ask for input, update PRs. No live infra mutation. | Credential requests |
-| 4 | **Break-glass Execute** | Exceptional direct execution path outside the default PR-first workflow. | Explicit human approval on every action |
+| Ceiling | What the agent may do | What it may not do |
+|---------|----------------------|--------------------|
+| **Off** | Nothing on its own initiative | Start any unattended work |
+| **Observe** | Read repositories, provider APIs and inventory; detect and report | Write anything, or hold raw cloud credentials |
+| **Propose** | Everything in Observe, plus create branches and pull requests | Merge, apply, or mutate cloud resources directly |
+| **Governed** | Everything in Propose, plus land eligible changes through server-side gateways (see [Governed Actions](#governed-actions)) | Merge or apply by itself, or touch paths the rules always send to a person |
 
-Each tier maps to a set of allowed tools, denied tools, and approval requirements:
+Three controls sit beside the ceilings:
+
+- **Production opt-in.** Production writes, and raw cloud credentials for production, need a separate opt-in that is only valid at Governed. Raw provider credentials cannot technically enforce read-only use, so they get their own switch. Lowering the ceiling below Governed clears the opt-in automatically.
+- **Emergency stop.** One switch forces the effective ceiling to Off immediately but keeps the selected one, so releasing it restores the previous setting. Test it before you need it.
+- **Break-glass execution** is not a ceiling. Direct changes outside the PR workflow belong in a separate system with separate credentials, a change ticket and a named approver on every action. Most teams never need it.
+
+How the levels in Chapter 10 map onto ceilings: level 0 runs with the requesting person's own authority (still PR-only for writes); level 1 needs Observe or Propose; level 2 needs Governed; level 3 can run under any ceiling, because it is about initiative, not authority. A goal-driven agent under a Propose ceiling still waits for a person on every merge.
 
 ```typescript
-// Example: tier-to-permissions mapping
-const tierPermissions = {
+// Example: ceiling-to-capability mapping
+const ceilingCapabilities = {
+  off: { capabilities: [] },
   observe: {
-    allowedTools: ['read-file', 'git-diff', 'describe-resource', 'query-logs'],
-    deniedTools: ['write-file', 'git-push', 'create-pr', 'cloud-credentials'],
+    capabilities: ['repo:read', 'provider-api:read', 'inventory:read', 'findings:read'],
   },
-  draft: {
-    allowedTools: ['*'],
-    deniedTools: ['terraform-apply', 'kubectl-apply'],
+  propose: {
+    capabilities: ['repo:read', 'repo:branch', 'pr:create', 'pr:update-own',
+                   'provider-api:read', 'inventory:read', 'pipeline:plan'],
   },
-  validate: {
-    allowedTools: ['*'],
-    deniedTools: ['terraform-apply', 'kubectl-apply', 'terraform-destroy'],
-  },
-  break_glass_execute: {
-    allowedTools: ['*'],
-    deniedTools: [],
-    requiresApproval: ['break-glass-access', 'change-ticket', 'named-approver'],
+  governed: {
+    capabilities: ['repo:read', 'repo:branch', 'pr:create', 'pr:update-own',
+                   'provider-api:read', 'inventory:read', 'pipeline:plan',
+                   'gateway:governed-merge', 'gateway:governed-apply'],
+    requiresProductionOptIn: ['provider-api:write:production', 'cloud-credentials:production'],
   },
 };
 ```
 
-For most teams, Tier 4 should not exist on day one. The guide's default posture remains PR-first. If you introduce break-glass execution, build and review it as a different risk class.
+### Freeze the Policy per Run
+
+Evaluate the ceiling once when a run starts, freeze it into a policy snapshot with its provenance (which ceiling, which person or service, which revision), and re-check the live ceiling on every capability request and every credential mint. The live state may only **lower** a frozen policy, never widen it, so an emergency stop, a downgrade or a production opt-out takes effect on bearers that already exist. If authority needs to go up, start a new run with a newly frozen policy instead of widening the old one. Service-originated runs should never be able to present the full authority of a manual session.
+
+### Token Scopes Rarely Match Your Intent
+
+Be careful about what a ceiling actually prevents. On GitHub, the `contents:write` permission a Propose agent needs to push a branch also allows merging, and `pull_requests:write` lets it update or review pull requests it didn't create. "Never merge" therefore cannot rest on token scopes alone. It has to be enforced by the server (the agent has no merge tool, and the gateway is the only path that merges), by branch protection the agent cannot bypass, and only last by instructions. Prefer providers and token types that can be restricted to exactly the repositories a run selected; we only attach a repository to continuous work when its provider can mint such a token.
+
+---
+
+## Governed Actions
+
+At the Governed ceiling, some changes land without a person clicking merge. The agent still never merges or applies anything itself. It opens a PR as usual, and a **server-owned gateway** decides whether that PR is eligible to land. The model proposes; the gates decide.
+
+### The Merge Gateway
+
+A governed merge should require all of these, and return "approval required" if any evidence is missing:
+
+- The run is a continuous run at the Governed ceiling, and the PR was created by that same session.
+- The PR head is the exact commit the agent validated, and the provider confirms branch protection is in force with no bypass.
+- For IaC, a successful validation run (plan, policy checks) from the same agent run, whose source commit equals the PR head. Store the plan digest in the receipt.
+- An explicit, versioned **environment autonomy policy** that only admins can write. The agent cannot author or weaken it. Combine it with organization policy by taking the most restrictive value of each rule: allowed regions are intersected, required tags are unioned, and the lowest cost ceiling wins.
+- Blast-radius limits. Ours are at most 25 files and 2,000 changed lines per governed merge, and at most 5 governed merges an hour and 20 a day, so one confident mistake can't become fifty.
+- A fail-closed distributed lock, so two replicas cannot land two changes at once.
+
+Some paths always go to a person, whatever the ceiling: CI and workflow definitions, identity and access, policy, secrets, database migrations, backend and provider configuration, and state. So does anything the rules cannot verify. Unknown is not permission.
+
+### The Apply Gateway
+
+Merging is half of the job; the change still has to be applied and confirmed. A governed apply is a small state machine that runs the team's own pipeline:
+
+```
+DECIDED ──► APPLY_RUNNING ──► VERIFY_RUNNING ──► SUCCEEDED
+                 │                   │
+                 └──── failure ──────┴──► ROLLBACK (exact revert to the pre-merge commit)
+```
+
+- It consumes the merge receipt and re-checks that the branch head is still the merge commit.
+- It triggers the normal deployment pipeline with the commit SHA and the action ID, and the pipeline publishes an attestation of which commit it actually applied.
+- Verification is a fresh scan that must show zero remaining changes.
+- Any failure triggers an exact rollback to the pre-merge commit. If the branch has moved on since the apply, the rollback halts and asks a person, because reverting someone else's later change is worse than stopping.
+- A rollback may continue after an emergency stop, because it is a compensating action rather than new work.
+
+### Risk Classes
+
+Not every action can earn autonomy. Classify actions before you decide where the gates sit:
+
+| Risk class | Examples | Can it be governed? |
+|-----------|----------|---------------------|
+| **Reversible and bounded** | Tags, encryption settings, diagnostic settings, closing public access, version bumps within a minor release | Yes, after a track record |
+| **Sensitive** | Network rules, scaling, multi-resource drift fixes, cross-environment changes | Approval-gated; a gate can prepare everything except the final click |
+| **Irreversible** | Deleting data stores, rotating root credentials, state surgery, anything that touches identity | A person, always |
+
+A runbook or environment policy can raise an action's risk class, never lower it.
+
+### Receipts
+
+If it is not a receipt, it did not happen. Record every governed decision and every execution as an append-only receipt:
+
+```typescript
+interface AutonomyReceipt {
+  kind: 'DECISION' | 'EXECUTION' | 'VERIFICATION' | 'ROLLBACK';
+  risk: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  decision?: 'SHADOW_ALLOW' | 'ALLOW' | 'DENY' | 'REQUIRE_APPROVAL';
+  result: 'NOT_ATTEMPTED' | 'SUCCEEDED' | 'FAILED' | 'VERIFIED' | 'ROLLED_BACK';
+  idempotencyKey: string;
+  organizationId: string;      // plain IDs, not foreign keys
+  sessionId: string;
+  policyRevision: string;
+  evidence: { headSha?: string; planDigest?: string; pipelineRunId?: string };
+  createdAt: string;
+}
+```
+
+Make the database reject `UPDATE` and `DELETE` on the receipts table. Retrying with the same idempotency key returns the identical earlier receipt, and a retry with the same key but different content is rejected. Store tenant and session IDs as plain values rather than foreign keys, so a retention job that deletes old sessions cannot cascade-delete governance evidence. `SHADOW_ALLOW` is useful during rollout: the gateway records that it *would* have landed the change while a person still clicks merge, which gives you the track record needed for promotion.
+
+A "change safety" verdict written by the agent itself (PASS, WARN or BLOCK across deletions, exposure, IAM, policy and cost) is a useful input for reviewers, but it is advisory. Only checks the server runs count as gates.
 
 ---
 
@@ -185,7 +264,7 @@ Example policies:
 
 ```markdown
 ## Policy: Encryption at Rest
-- All S3 buckets MUST have server-side encryption enabled (SSE-KMS preferred)
+- All S3 buckets MUST use SSE-KMS with the organization's key (the default SSE-S3 is not enough)
 - All RDS instances MUST have storage encryption enabled
 - All EBS volumes MUST be encrypted
 - When fixing encryption findings, use the organization's KMS key: alias/infra-key
@@ -249,18 +328,23 @@ This closes the loop: a human writes policy in plain language → the agent unde
 {
   "Version": "2012-10-17",
   "Statement": [{
-    "Sid": "DenyUnencryptedS3",
+    "Sid": "DenyOutsideApprovedRegions",
     "Effect": "Deny",
-    "Action": "s3:PutObject",
+    "NotAction": [
+      "iam:*", "organizations:*", "sts:*", "support:*",
+      "cloudfront:*", "route53:*", "budgets:*"
+    ],
     "Resource": "*",
     "Condition": {
       "StringNotEquals": {
-        "s3:x-amz-server-side-encryption": "aws:kms"
+        "aws:RequestedRegion": ["eu-west-1", "eu-central-1"]
       }
     }
   }]
 }
 ```
+
+For encryption rules, prefer bucket-default encryption with the organization's KMS key plus a detective Config rule over an SCP that denies `s3:PutObject` without an encryption header. S3 has encrypted every new object by default since 2023, and a header-based deny breaks uploads that rely on the bucket default.
 
 **AWS Config Rules** — Detect non-compliant resources:
 
@@ -284,7 +368,7 @@ Resources:
 ```json
 {
   "properties": {
-    "displayName": "Require encryption on storage accounts",
+    "displayName": "Storage accounts must not allow public blob access",
     "policyType": "Custom",
     "mode": "All",
     "policyRule": {
@@ -295,8 +379,8 @@ Resources:
             "equals": "Microsoft.Storage/storageAccounts"
           },
           {
-            "field": "Microsoft.Storage/storageAccounts/encryption.services.blob.enabled",
-            "notEquals": true
+            "field": "Microsoft.Storage/storageAccounts/allowBlobPublicAccess",
+            "notEquals": false
           }
         ]
       },
@@ -318,24 +402,28 @@ listPolicy:
     - in:us-locations
 ```
 
-**OPA / Rego** — General-purpose policy enforcement:
+**OPA / Rego** — General-purpose policy enforcement against a Terraform plan (Rego v1 syntax, which OPA 1.0 and current Conftest require):
 
 ```rego
 # Generated from: "No public S3 buckets"
 package terraform.s3
 
-deny[msg] {
+import rego.v1
+
+deny contains msg if {
   resource := input.resource_changes[_]
-  resource.type == "aws_s3_bucket"
-  resource.change.after.acl == "public-read"
-  msg := sprintf("S3 bucket '%s' must not be public", [resource.name])
+  resource.type == "aws_s3_bucket_acl"
+  resource.change.after.acl in {"public-read", "public-read-write"}
+  msg := sprintf("S3 bucket ACL '%s' must not be public", [resource.address])
 }
 
-deny[msg] {
+deny contains msg if {
   resource := input.resource_changes[_]
   resource.type == "aws_s3_bucket_public_access_block"
-  resource.change.after.block_public_acls != true
-  msg := sprintf("S3 bucket '%s' must block public ACLs", [resource.name])
+  some setting in ["block_public_acls", "block_public_policy",
+                   "ignore_public_acls", "restrict_public_buckets"]
+  resource.change.after[setting] != true
+  msg := sprintf("'%s' must set %s = true", [resource.address, setting])
 }
 ```
 
@@ -415,7 +503,7 @@ Agent generates changes
             ▼
 ┌─────────────────────────┐
 │  Policy-as-code check   │──── OPA/Rego, Sentinel, Checkov,
-│  (against the plan)     │     tfsec, Trivy, custom rules
+│  (against the plan)     │     Trivy, custom rules
 └───────────┬─────────────┘
             │
             ▼
@@ -492,6 +580,15 @@ The implementation pattern:
 
 The key design decision: **how does the worker wait?** Options include blocking on a Redis pub/sub channel, polling a database, or using a workflow engine (Temporal, Inngest) that natively supports human-in-the-loop pauses.
 
+
+### Only Humans Approve
+
+An approval is only an approval if an authenticated person made it through your API, and the server recorded it. Text in the chat ("yes, go ahead"), a file the agent wrote, or a decision made by a child session on behalf of its parent are not approval records. We added this rule explicitly after a delegated sub-session effectively approved an action its parent was waiting on. Bind each approval to the exact thing approved (a goal revision, a plan digest, a commit SHA) so that any change after approval needs a new one.
+
+### Keep Tool Approvals in the Runtime
+
+Per-tool approval defaults (`allow` or `ask`) should live in the agent runtime's own policy and be read on every turn, not copied into each session when it starts. Long-lived and goal-driven sessions otherwise keep running with yesterday's approval list; when the defaults live in the runtime, a tool that is newly marked "ask" takes effect from the next turn of every session.
+
 ---
 
 ## Budget & Rate Limits
@@ -560,11 +657,17 @@ PROMPT-LEVEL (Layer 2)
 [ ] Generated policies go through standard PR review
 
 RUNTIME (Layer 3)
-[ ] Autonomy tiers defined and mapped to tool permissions
+[ ] Autonomy ceilings defined per workspace/environment, starting at Off
+[ ] Ceiling frozen per run; live state can only lower it; upgrades start a new run
+[ ] "No merge" enforced by the server and branch protection, not token scopes
+[ ] Governed merges and applies go through a server-owned gateway with blast-radius limits
+[ ] Identity, secrets, CI, policy, migrations and state always go to a person
+[ ] Append-only receipts for every governed decision, execution and rollback
+[ ] Emergency stop tested end to end
 [ ] Pre-execution validation runs inside the agent loop (not just CI)
 [ ] Policy violations have clear escalation paths (block / escalate / warn / audit)
 [ ] Budget limits set per agent type with graceful stop on exceed
-[ ] HITL checkpoints implemented with timeout and fallback
+[ ] HITL checkpoints implemented with timeout and fallback; only authenticated humans approve
 [ ] If break-glass execution exists, it uses separate credentials, workflow, and audit paths
 ```
 
@@ -573,3 +676,7 @@ RUNTIME (Layer 3)
 ## Next Chapter
 
 [Chapter 9: Observability & Audit →](./09-observability.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*

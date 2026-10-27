@@ -6,12 +6,12 @@
 
 ## The Problem: Discovery Is Expensive
 
-Ask an infrastructure agent to "fix the unencrypted S3 bucket in production." Without pre-built context, here's what happens:
+Ask an infrastructure agent to "fix the production S3 bucket that isn't using our KMS key." Without pre-built context, here's what happens:
 
 ```
 Agent: calls aws s3api list-buckets                     # 200+ buckets, 15s
 Agent: for each bucket, calls get-bucket-encryption      # 200 API calls, 90s
-Agent: for each unencrypted, calls get-bucket-tagging    # more API calls
+Agent: for each bucket on SSE-S3, calls get-bucket-tagging  # more API calls
 Agent: cross-references with terraform state             # terraform state pull, 30s
 Agent: reads tf files to find the resource address       # grep across repo
 Agent: finally has enough context to write a fix         # 3+ minutes burned
@@ -74,7 +74,7 @@ Infrastructure agents don't just need cloud resource lists. They need layered co
 └──────────────────────────────────────────────────────────┘
 ```
 
-The agent that has all five layers can go from "fix the unencrypted bucket" to "here's a PR that adds SSE-KMS to `aws_s3_bucket.prod_logs` in `modules/storage/main.tf`, using the existing KMS key from the same account, following the Payments team's encryption standard" — in seconds.
+The agent that has all five layers can go from "fix the bucket that isn't on our key" to "here's a PR that adds an `aws_s3_bucket_server_side_encryption_configuration` with SSE-KMS for `aws_s3_bucket.prod_logs` in `modules/storage/main.tf`, using the organization key `alias/infra-key` that already exists in the same account, following the Payments team's encryption standard" — in seconds.
 
 The agent that only has Layer 1 writes a technically correct but organizationally wrong fix, and takes minutes to get there.
 
@@ -85,15 +85,15 @@ The agent that only has Layer 1 writes a technically correct but organizationall
 Regardless of implementation, every data plane follows the same pattern:
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   COLLECT    │────▶│    STORE     │────▶│  CORRELATE   │────▶│  SERIALIZE   │
-│              │     │              │     │              │     │              │
-│ Cloud APIs   │     │ Normalized   │     │ Cloud ↔ IaC  │     │ Markdown for │
-│ IaC state    │     │ resources,   │     │ Cloud ↔ Sec  │     │ LLM context  │
-│ Compliance   │     │ findings,    │     │ Resource ↔   │     │              │
-│ Cost data    │     │ cost data    │     │ Resource     │     │ JSON for     │
-│ Docs/wikis   │     │              │     │              │     │ skill APIs   │
-└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+│  COLLECT   │──▶│   STORE    │──▶│ CORRELATE  │──▶│ SERIALIZE  │──▶│  PRESERVE  │
+│            │   │            │   │            │   │            │   │            │
+│ Cloud APIs │   │ Normalized │   │ Cloud↔IaC  │   │ Markdown   │   │ Starting   │
+│ IaC state  │   │ resources, │   │ Cloud↔Sec  │   │ for LLM    │   │ state and  │
+│ Compliance │   │ findings,  │   │ Resource↔  │   │ context;   │   │ proposed   │
+│ Cost data  │   │ cost data  │   │ Resource   │   │ JSON for   │   │ changes,   │
+│ Docs/wikis │   │            │   │            │   │ skill APIs │   │ versioned  │
+└────────────┘   └────────────┘   └────────────┘   └────────────┘   └────────────┘
 ```
 
 ### Step 1: Collect
@@ -278,11 +278,11 @@ Store these as an edge table in your database: `source_id`, `target_id`, `relati
 
 ### Why agents need the graph
 
-When an agent gets a finding "S3 bucket `prod-logs` is not encrypted," it needs to:
+When an agent gets a finding "S3 bucket `prod-logs` uses default SSE-S3, but policy requires SSE-KMS with the organization key," it needs to:
 1. Find the bucket (Layer 1)
 2. Find the IaC address (Layer 2)
-3. Check if a KMS key exists in the same account (graph traversal)
-4. If yes, reference it. If no, create one.
+3. Check that the organization key `alias/infra-key` exists in the same account (graph traversal)
+4. If yes, reference it. If no, stop and escalate: creating a new key would not satisfy the policy.
 
 Without the graph, step 3 requires additional API calls. With the graph, it's a database query: "show me all resources in this account with type `AWS_KMS_KEY`."
 
@@ -306,7 +306,7 @@ An agent fixing a compliance finding in `prod-payments-vpc` should know:
 | **Git repositories** | IaC code, READMEs, ADRs, module docs | Clone and index on scan |
 | **Wiki/docs** (Confluence, Notion) | Architecture docs, runbooks, naming conventions | API sync on schedule |
 | **Service catalogs** (Backstage, ServiceNow) | Service ownership, dependencies, SLOs | API sync |
-| **Incident management** (PagerDuty, OpsGenie) | Past incidents per service/resource | Webhook or API sync |
+| **Incident management** (PagerDuty, Opsgenie) | Past incidents per service/resource | Webhook or API sync. Opsgenie reaches end of support on 2027-04-05; Atlassian directs customers to Jira Service Management |
 | **Past agent sessions** | Previous decisions, reasoning, patterns | Already in session store |
 | **Custom policies** | Org-specific rules in plain language | Admin-authored, stored in DB |
 
@@ -380,7 +380,7 @@ interface KnowledgeMemory {
 
 Retrieval must enforce the same subject and workspace authorization as the source data; metadata filters are not a substitute for an authorization boundary. Show provenance and review status in the UI, expire operational facts, and support superseding rather than silently editing history. Store durable decisions and reusable facts — not hidden reasoning, raw credentials, or speculative diagnoses.
 
-[OpenGeni](https://github.com/Cloudgeni-ai/opengeni) uses this pattern for reviewed workspace memory: agents can search approved memories and propose new ones, but a human or host API admits them into future retrieval context. The same control is useful for infrastructure ownership, runbook exceptions, and remediation lessons.
+[Opengeni](https://github.com/Cloudgeni-ai/opengeni) uses this pattern for reviewed workspace memory: agents can search approved memories and propose new ones, but a human or host API admits them into future retrieval context. The same control is useful for infrastructure ownership, runbook exceptions, and remediation lessons.
 
 ---
 
@@ -436,8 +436,9 @@ System prompt:
 
 Injected context:
   ## Finding
-  S3 bucket `prod-logs` missing server-side encryption.
-  Severity: HIGH | Framework: CIS AWS v3.0 | Control: 2.1.1
+  S3 bucket `prod-logs` uses default SSE-S3 encryption; org policy requires
+  SSE-KMS with the organization key (alias/infra-key).
+  Severity: HIGH | Source: org policy "Encryption at Rest" | AWS Security Hub: S3.17
 
   ## Affected Resource
   - Type: AWS_S3_BUCKET
@@ -564,7 +565,7 @@ This works as a complement to the other levels — MCP resources give the agent 
 "Fix this specific S3 encryption finding"
   → Level 1: Direct injection. You know exactly what context is needed.
 
-"Show me all unencrypted S3 buckets across our AWS accounts"
+"Show me all S3 buckets across our AWS accounts that are not on SSE-KMS"
   → Level 2: Filtered query. Structured search by resource type + property.
 
 "How did we handle encryption for the payments team last quarter?"
@@ -592,7 +593,7 @@ These tools handle the collection and normalization of cloud resources:
 | **Your own scanners** | Custom scanners using cloud provider SDKs | Maximum control over what's scanned and how it's stored |
 | [CloudQuery](https://github.com/cloudquery/cloudquery) | Syncs cloud resources to PostgreSQL or any database. 100+ plugins. | Best general-purpose option if you don't want to build scanners |
 | [Steampipe](https://github.com/turbot/steampipe) | SQL interface to cloud APIs. Query AWS/Azure/GCP with SQL. | Real-time queries, no persistence (query → API call) |
-| [Cartography](https://github.com/lyft/cartography) | Builds a Neo4j graph of assets and relationships (by Lyft) | Graph-native, includes IAM relationship mapping |
+| [Cartography](https://github.com/cartography-cncf/cartography) | Builds a Neo4j graph of assets and relationships (started at Lyft, now a CNCF project) | Graph-native, includes IAM relationship mapping |
 
 **Cloud provider inventories** — AWS Config + Resource Explorer, Azure Resource Graph, GCP Cloud Asset Inventory, OCI Search — are useful as supplements for real-time queries, but they're per-provider with no cross-cloud view and no custom enrichment (IaC correlation, cost data, compliance linking).
 

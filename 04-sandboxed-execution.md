@@ -86,9 +86,7 @@ services:
     security_opt:
       - no-new-privileges:true
     cap_drop:
-      - ALL
-    cap_add:
-      - NET_RAW             # For DNS resolution
+      - ALL                 # DNS and HTTPS need no extra capabilities
     mem_limit: 4g
     cpus: 2
     pids_limit: 256
@@ -113,7 +111,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Terraform
-RUN curl -fsSL https://releases.hashicorp.com/terraform/1.9.0/terraform_1.9.0_linux_amd64.zip \
+RUN curl -fsSL https://releases.hashicorp.com/terraform/1.17.0/terraform_1.17.0_linux_amd64.zip \
     -o /tmp/terraform.zip && unzip /tmp/terraform.zip -d /usr/local/bin/ && rm /tmp/terraform.zip
 
 # Azure CLI (if needed)
@@ -141,7 +139,7 @@ WORKDIR /workspace
 
 ## Option 2: Modal (Serverless Containers)
 
-[Modal](https://modal.com) provides serverless container execution with sub-second cold starts. Excellent for bursty agent workloads.
+[Modal](https://modal.com) provides serverless container execution with fast cold starts: typically around two seconds for a new container, and sub-second when a warm container or memory snapshot is available. It suits bursty agent workloads.
 
 ### Architecture
 
@@ -165,8 +163,8 @@ agent_image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "curl", "unzip", "jq")
     .run_commands(
-        "curl -fsSL https://releases.hashicorp.com/terraform/1.9.0/"
-        "terraform_1.9.0_linux_amd64.zip -o /tmp/tf.zip",
+        "curl -fsSL https://releases.hashicorp.com/terraform/1.17.0/"
+        "terraform_1.17.0_linux_amd64.zip -o /tmp/tf.zip",
         "unzip /tmp/tf.zip -d /usr/local/bin/",
     )
     .pip_install("anthropic", "redis", "httpx")
@@ -219,8 +217,8 @@ async function dispatchToModal(task: AgentTask) {
 | Pros | Cons |
 |------|------|
 | Zero infrastructure management | Vendor dependency |
-| Auto-scaling (0 to N) | Cold starts (~2s first call) |
-| Pay-per-second billing | Requires Python SDK for config |
+| Auto-scaling (0 to N) | Cold starts (~2s for a new container) |
+| Pay-per-second billing | Functions are defined in Python; the JS and Go SDKs (beta) drive Sandboxes only |
 | Built-in secrets management | Egress costs |
 | GPU support for ML workloads | Less control over networking |
 
@@ -363,7 +361,7 @@ async function dispatchToECS(task: AgentTask) {
 
 ## Option 5: Kubernetes Jobs
 
-Maximum control. Run agent tasks as Kubernetes Jobs with pod security policies.
+Maximum control. Run agent tasks as Kubernetes Jobs in a namespace that enforces the `restricted` [Pod Security Admission](https://kubernetes.io/docs/concepts/security/pod-security-admission/) level (`pod-security.kubernetes.io/enforce: restricted`). PodSecurityPolicy was removed in Kubernetes 1.25.
 
 ```yaml
 # agent-job.yaml
@@ -387,6 +385,9 @@ spec:
       containers:
         - name: agent
           image: registry.example.com/agent-worker:latest
+          securityContext:              # required by the `restricted` level
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
           resources:
             requests: { cpu: "1", memory: "2Gi" }
             limits: { cpu: "2", memory: "4Gi" }
@@ -414,10 +415,22 @@ spec:
   policyTypes: [Egress]
   egress:
     - to:
-        - ipBlock: { cidr: 0.0.0.0/0 }  # Allow outbound
+        - ipBlock:
+            cidr: 0.0.0.0/0             # Public HTTPS only (git, cloud APIs)
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16          # Includes the metadata endpoint
       ports:
-        - port: 443    # HTTPS (git, cloud APIs)
-        - port: 6379   # Redis
+        - port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels: { name: agent-infra }
+          podSelector:
+            matchLabels: { app: redis }
+      ports:
+        - port: 6379   # Redis, by selector rather than an open CIDR
     - to:
         - namespaceSelector:
             matchLabels: { name: kube-system }
@@ -480,7 +493,19 @@ A provider reporting "running" does not prove that the right workspace, process,
 
 Archive or snapshot creation is not success until its digest, contents, and restore path are verified. Run an orphan sweeper against `listOwned()` and compare provider inventory with durable session state. Record cleanup failures as evidence; do not erase the provider ID and declare the leak gone.
 
-This pattern is backported from [OpenGeni's sandbox/control-plane architecture](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/architecture.md), where worker restarts and provider recovery are treated as distributed ownership changes rather than simple container restarts.
+This pattern is backported from [Opengeni's sandbox/control-plane architecture](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/architecture.md), where worker restarts and provider recovery are treated as distributed ownership changes rather than simple container restarts.
+
+### One Teardown Path, and Sweeps That Respect Leases
+
+Once sandboxes are owned through leases, give them exactly one authoritative teardown path: the lease owner, or a recovery flow that has taken over the lease. Every other cleanup mechanism should defer to that path.
+
+We learned this in production when a global orphan sweep terminated live sandboxes. The sweep compared provider inventory with its own view of active sessions and ignored lease ownership, so sandboxes that were busy but held by a valid lease looked orphaned. The fixes were small but strict:
+
+- Treat durable lease attribution as ownership evidence. If a sandbox is attributed to a lease, the sweep does not touch it until the lease has expired and the owning session is confirmed terminal.
+- Make sweeps fail closed. When the sweep cannot read lease state or cannot resolve attribution, it skips the sandbox and records why, rather than deleting it.
+- Keep claims narrow. A snapshot capture that fails must release only the claim it took for that capture, never the session's main lease or claims held by other operations.
+
+Log every sweep decision with the evidence it used (lease ID, generation, last heartbeat), so a wrongful teardown can be traced to the rule that allowed it.
 
 ---
 
@@ -488,13 +513,13 @@ This pattern is backported from [OpenGeni's sandbox/control-plane architecture](
 
 | Feature | Docker | Modal | Azure Container Apps | AWS Lambda/ECS | Kubernetes |
 |---------|--------|-------|---------------------|----------------|------------|
-| **Cold start** | ~0s (warm) | ~2s | ~10s | Lambda: ~1s, ECS: ~30s | ~5-30s |
+| **Cold start** | ~0s (warm) | ~2s (sub-second warm) | ~10s | Lambda: ~1s, ECS: ~30s | ~5-30s |
 | **Max runtime** | Unlimited | 24h | 24h | Lambda: 15m, ECS: unlimited | Unlimited |
 | **Isolation** | Container | Container + network | Container + VNET | Lambda: microVM | Pod + network policy |
 | **Scaling** | Manual | Automatic | Automatic | Automatic | HPA/KEDA |
 | **Cost model** | Fixed | Per-second | Per-second | Per-request/second | Cluster + pod |
 | **Managed identity** | DIY | Secrets mgmt | Native | IAM roles | Service accounts |
-| **GPU support** | Yes | Yes | No | No (Lambda) | Yes |
+| **GPU support** | Yes | Yes | Yes (serverless GPUs) | No (Lambda) | Yes |
 | **Local dev** | Native | Modal CLI | Local emulator | SAM/LocalStack | Minikube/Kind |
 | **Best for** | Dev/small scale | Bursty, serverless | Azure-native | AWS-native | Multi-cloud, full control |
 
@@ -526,3 +551,7 @@ DENY:
 ## Next Chapter
 
 [Chapter 5: Credential Management →](./05-credential-management.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*

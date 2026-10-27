@@ -57,7 +57,7 @@ const infraTools = createSdkMcpServer({
 
 // Run the agent — the SDK handles the full loop
 for await (const message of query({
-  prompt: "Fix the unencrypted S3 bucket in modules/storage/main.tf",
+  prompt: "Move the prod-logs bucket in modules/storage/main.tf to SSE-KMS with alias/infra-key",
   options: {
     systemPrompt: hardRules + policyDigest,
     allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
@@ -73,13 +73,15 @@ for await (const message of query({
 }
 ```
 
-**Key features**: Built-in file and shell tools, MCP server support, subagent delegation (`Task` tool), managed/project subagent definitions for reusable roles, session resume via `session_id`, cost budgets (`maxBudgetUsd`), and lifecycle hooks for pre/post tool-use validation.
+**Key features**: Built-in file and shell tools, MCP server support, subagent delegation (the `Agent` tool, named `Task` before Claude Code v2.1.63; the SDK still reports `Task` in `system:init` messages and permission denials, so allow-lists and checks should accept both names), managed/project subagent definitions for reusable roles, session resume via `session_id`, cost budgets (`maxBudgetUsd`), and lifecycle hooks for pre/post tool-use validation.
+
+**Claude Managed Agents** is the hosted variant. Anthropic runs the agent loop (orchestration, context management, error recovery) on its own infrastructure, while tool execution happens in a sandbox you configure: either self-hosted or with a partner sandbox provider such as Cloudflare, Daytona, Modal, or Vercel. [MCP tunnels](https://claude.com/blog/claude-managed-agents-updates), which let agents reach private MCP servers without exposing them to the internet, are in research preview. This removes most of the orchestration work in the rest of this chapter, at the cost of keeping session state with the vendor.
 
 ### Option 2: OpenAI Codex CLI / Agents SDK
 
 OpenAI now offers two complementary layers for building agents:
 
-**Codex CLI** ([github.com/openai/codex](https://github.com/openai/codex)) is an open-source terminal agent (Rust, Apache-2.0) that reads, modifies, and executes code locally. It uses the Responses API under the hood with platform-specific sandboxing (Seatbelt on macOS, Landlock on Linux). It's best when the agent lives inside a workstation or ephemeral repo checkout.
+**Codex CLI** ([github.com/openai/codex](https://github.com/openai/codex)) is an open-source terminal agent (Rust, Apache-2.0) that reads, modifies, and executes code locally. It uses the Responses API under the hood with OS-native sandboxing: Seatbelt on macOS, bubblewrap or Landlock plus seccomp on Linux, and a dedicated sandbox on Windows. It's best when the agent lives inside a workstation or ephemeral repo checkout.
 
 **Agents SDK** ([OpenAI docs](https://platform.openai.com/docs/guides/agents-sdk)) is OpenAI's application framework for custom agents in both **TypeScript and Python**. It supports typed tools, hosted tools, MCP servers, handoffs, session state, tracing, and guardrail hooks. For long-running work, the underlying Responses API also supports server-managed conversation state, background execution, and webhook-style completion flows.
 
@@ -103,7 +105,7 @@ const agent = new Agent({
   tools: [terraformPlan],
 });
 
-const result = await run(agent, "Fix the unencrypted S3 bucket", {
+const result = await run(agent, "Move the prod-logs bucket to SSE-KMS with alias/infra-key", {
   conversationId: existingConversationId,
 });
 
@@ -118,12 +120,12 @@ For long model calls, the Responses API's [background mode](https://developers.o
 
 ### Option 3: LangChain / LangGraph
 
-The Python ecosystem's most popular agent frameworks. [LangChain](https://github.com/langchain-ai/langchain) provides a simple ReAct agent loop. [LangGraph](https://github.com/langchain-ai/langgraph) adds stateful graphs with conditional routing — useful for complex multi-step workflows like "scan → triage → remediate → validate → PR."
+The most widely used open-source agent frameworks, available in Python and TypeScript (LangChain.js and LangGraph.js). [LangChain](https://github.com/langchain-ai/langchain) provides a simple tool-calling agent loop through `create_agent`. [LangGraph](https://github.com/langchain-ai/langgraph) adds stateful graphs with conditional routing — useful for complex multi-step workflows like "scan → triage → remediate → validate → PR."
 
 ```python
 from langchain_anthropic import ChatAnthropic
+from langchain.agents import create_agent
 from langchain.tools import tool
-from langgraph.prebuilt import create_react_agent
 
 @tool
 def terraform_plan(work_dir: str) -> str:
@@ -134,8 +136,12 @@ def terraform_plan(work_dir: str) -> str:
     )
     return result.stdout
 
-llm = ChatAnthropic(model="claude-sonnet-4-20250514")
-agent = create_react_agent(llm, [terraform_plan])
+llm = ChatAnthropic(model="claude-sonnet-5-5")
+agent = create_agent(
+    llm,
+    tools=[terraform_plan],
+    system_prompt="Fix compliance findings by editing Terraform files.",
+)
 
 result = agent.invoke({
     "messages": [{"role": "user", "content": "Fix the S3 encryption finding"}]
@@ -143,7 +149,7 @@ result = agent.invoke({
 ```
 
 **Pros**: Works with any LLM provider (swap `ChatAnthropic` for `ChatOpenAI`), large ecosystem of pre-built tools, LangGraph supports checkpointing and human-in-the-loop natively.
-**Cons**: Heavy abstraction layers, Python-only, debugging through the chain can be opaque.
+**Cons**: Heavy abstraction layers, and debugging through the chain can be opaque. The v1 release moved the prebuilt agent from `langgraph.prebuilt.create_react_agent` to `langchain.agents.create_agent` (and renamed `prompt` to `system_prompt`), so pin versions and expect migrations.
 
 ### Option 4: Direct API Wrapper (Build Your Own)
 
@@ -164,7 +170,7 @@ async function runAgentLoop(
 
   for (let turn = 0; turn < maxTurns; turn++) {
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5-5",
       max_tokens: 8192,
       tools,
       messages,
@@ -213,9 +219,9 @@ Beyond the vendor SDKs, a growing ecosystem of open-source frameworks handles th
 | [**Smolagents**](https://github.com/huggingface/smolagents) (HF) | Agents write executable Python code instead of JSON tool calls | Lightweight agents, code-generation-first workflows |
 | [**Haystack**](https://github.com/deepset-ai/haystack) (deepset) | Pipeline-as-graph architecture, YAML-serializable, K8s-ready | RAG + agent pipelines, production search/retrieval workflows |
 | [**Google ADK**](https://github.com/google/adk-python) | Google-backed, optimized for Gemini but model-agnostic | GCP-native teams, multi-language runtimes |
-| [**Strands Agents**](https://github.com/strands-agents/sdk-python) (AWS) | AWS-backed, model-driven approach | AWS-native teams, Bedrock integration |
+| [**Strands Agents**](https://github.com/strands-agents/harness-sdk) (AWS) | AWS-backed, model-driven approach; Python and TypeScript | AWS-native teams, Bedrock integration |
 
-**Note on AutoGen**: Microsoft's [AutoGen](https://github.com/microsoft/autogen) pioneered multi-agent conversations but is now in **maintenance mode**. New development moved to the Microsoft Agent Framework. The community fork [AG2](https://github.com/ag2ai/ag2) continues active development.
+**Note on AutoGen**: Microsoft's [AutoGen](https://github.com/microsoft/autogen) pioneered multi-agent conversations but is now **archived**. Its successor is the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework), which reached 1.0 general availability for Python and .NET. The community fork [AG2](https://github.com/ag2ai/ag2) continues separately.
 
 #### TypeScript Frameworks
 
@@ -240,7 +246,7 @@ All of these implement the same core pattern — LLM → tool call → execute �
 |---|---|---|---|---|---|---|
 | **Claude Agent SDK** | TS, Python | Claude | MCP + built-in tools | Resume by ID | Subagents | Low |
 | **OpenAI Agents SDK** | TS, Python | OpenAI | Function tools + hosted tools + MCP | Sessions / `conversationId` / `previous_response_id` | Handoffs | Low |
-| **LangChain/LangGraph** | Python | Any | Decorators + schemas | Checkpoints | Subgraphs | Medium-High |
+| **LangChain/LangGraph** | Python, TS | Any | Decorators + schemas | Checkpoints | Subgraphs | Medium-High |
 | **CrewAI** | Python | Any | Decorators + custom | Flows state | Role-based crews | Medium |
 | **Pydantic AI** | Python | Any | Typed decorators | You build | You build | Low-Medium |
 | **Smolagents** | Python | Any | Code-as-action | You build | Multi-agent | Low |
@@ -260,6 +266,19 @@ All of these implement the same core pattern — LLM → tool call → execute �
 - **Direct API wrapper** if you need maximum control, want to avoid framework dependencies, or have non-standard execution requirements.
 
 All of these produce the same output: a loop that drives an LLM through tool calls until a task is complete. The differences are in abstraction level, ecosystem, and which LLM providers you can use.
+
+#### A Decision Rule: Where Does the State Live?
+
+A more durable way to choose is to ask where session state lives, because that decides what you can recover, audit, and migrate later:
+
+| Category | Where session state lives |
+|----------|---------------------------|
+| Managed agent services | With the vendor, behind its API |
+| Frameworks and SDKs | Wherever you build it; the framework leaves persistence to you |
+| Single-machine open agents | On one box, usually in local files |
+| Open agent platforms | In your own database, under your own retention and access rules |
+
+At the reactive and propose levels (levels 0 and 1 in [Chapter 10](./10-autonomy-notifications.md#autonomy-is-a-dial)), almost any of these works, because a human reviews every output and a lost session costs little. Once agents merge changes or pursue goals unattended, choose the platform or harness first and the model second. Keep the conversation history in your own format so you can switch model providers without losing sessions: access to a specific model can disappear on short notice through retirement, pricing, quota, or account changes, and an agent fleet that can only resume on one model stops with it.
 
 ---
 
@@ -358,12 +377,13 @@ await agentQueue.add('remediation', payload, {
   priority: task.priority === 'critical' ? 1 : 10,
   attempts: 3,
   backoff: { type: 'exponential', delay: 5000 },
-  timeout: 15 * 60 * 1000, // 15 min hard timeout
 });
 
-// Worker
+// Worker. BullMQ has no per-job `timeout` option, so enforce the
+// deadline inside the processor and make runAgent honour the signal.
 const worker = new Worker('agent-tasks', async (job) => {
-  await runAgent(job.data);
+  const signal = AbortSignal.timeout(15 * 60 * 1000); // 15 min hard timeout
+  await runAgent(job.data, { signal });
 }, {
   concurrency: 2,   // Max concurrent agents per worker
   connection: redis,
@@ -428,8 +448,11 @@ export async function remediationWorkflow(task: AgentTask): Promise<void> {
           return;
         }
       }
-      // Max iterations reached — escalate
-      await createPR(repo, agentResult.changes, { note: 'Drift remains after 10 attempts' });
+      // Max iterations reached — escalate with a draft PR that says so
+      await createPR(repo, agentResult.changes, {
+        draft: true,
+        note: 'Not converged: drift remains after 10 attempts (remaining plan diff attached)',
+      });
     }
   }
 }
@@ -488,7 +511,7 @@ Providers:
 ├── Modal        (Python/Node, GPU support, ~2s cold start)
 ├── Azure Container App Jobs  (Docker, managed identity)
 ├── AWS Lambda   (15min limit — may not be enough)
-├── Google Cloud Run Jobs     (Docker, up to 24h)
+├── Google Cloud Run Jobs     (Docker, task timeout up to 168h)
 └── Kubernetes Jobs           (any container, full control)
 ```
 
@@ -663,7 +686,7 @@ export const TASK_REGISTRY = {
     payloadSchema: z.object({
       repositoryId: z.string().uuid(),
       branch: z.string(),
-      tools: z.array(z.enum(['checkov', 'tflint', 'tfsec'])),
+      tools: z.array(z.enum(['checkov', 'tflint', 'trivy'])),
     }),
     queue: 'task:dispatch:static-analysis',
     timeout: 5 * 60 * 1000,  // 5 min
@@ -812,7 +835,7 @@ app.get('/api/v1/sessions/:sessionId/runs/:runId/events', (req, res) => {
 
 ### Durable History, Ephemeral Fanout
 
-Do not make Redis Pub/Sub, NATS Core, an open SSE connection, or a provider stream the authoritative history. The production pattern used by [OpenGeni](https://github.com/Cloudgeni-ai/opengeni) is:
+Do not make Redis Pub/Sub, NATS Core, an open SSE connection, or a provider stream the authoritative history. The production pattern used by [Opengeni](https://github.com/Cloudgeni-ai/opengeni) is:
 
 1. append each accepted event to a durable database with a per-session sequence number
 2. publish it to a low-latency fanout bus
@@ -839,3 +862,7 @@ The database answers "what happened"; the realtime bus answers "what is happenin
 ## Next Chapter
 
 [Chapter 3: Tools, CLIs & Skills →](./03-tools-skills.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*
