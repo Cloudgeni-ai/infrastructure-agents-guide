@@ -6,7 +6,7 @@
 
 ## Risk-to-Mitigation Matrix
 
-Every risk in the report mapped to concrete mitigations covered in this guide:
+Common risks of infrastructure agents, mapped to the mitigations covered in this guide:
 
 | Risk | Why Agents Amplify It | Infra Failure Example | Mitigations | Guide Chapter |
 |------|----------------------|----------------------|-------------|---------------|
@@ -17,60 +17,69 @@ Every risk in the report mapped to concrete mitigations covered in this guide:
 | **Cost/latency runaway** | Multi-step loops; long context; agent fan-out | Agent loops on logs, burns $10K in tokens, delays humans | Hard budgets (time, tokens, tools), stop conditions, queue depth limits | Ch 2, 8 |
 | **Poor observability** | Non-determinism; hidden reasoning; distributed tool calls | "Why did the agent create that PR?" can't be answered | Action trails, correlation IDs, OTel instrumentation, structured logs | Ch 9 |
 | **Malicious skills/plugins** | Skills = markdown + code; documentation becomes executable | Malicious skill exfiltrates credentials | Skill allow-lists, no third-party skills without review, provenance checks | Ch 3 |
-| **Silent failures** | Autonomous agents run without supervision | Drift scan fails for weeks, nobody notices | Notifications, daily digests, stuck run watchdog, escalation chains | Ch 10 |
+| **Silent failures** | Autonomous agents run without supervision | Drift scan fails for weeks, nobody notices | Failure-pattern alerts per launcher, canaries, daily digests, stuck run watchdog, escalation chains | Ch 9, 10 |
+| **Runaway autonomy** | Many replicas, retries and self-scheduling multiply each other | One goal spawns dozens of sessions overnight | One owner per goal, retry budget tied to the source observation, wake and token budgets | Ch 10 |
+| **Authority creep** | Token scopes are broader than intent; settings change mid-run | A "propose-only" agent's token can also merge | Policy frozen per run, server-owned merge gateway, branch protection, production opt-in | Ch 5, 8 |
+| **Untrustworthy signals** | Agents act on whatever the scanners say | A failed scan auto-resolves every finding; empty cost data reads as zero | Signal eligibility rules, "empty is unknown", scanner vs user resolution | Ch 6, 10 |
+| **Orphaned ownership** | Unattended work outlives the person who set it up | A departed member's integration silently breaks reviews | Audited owner fallback, re-homing on member removal | Ch 5, 10 |
 
 ---
 
 ## Autonomy Decision Matrix
 
-Use this to determine the right autonomy level for each use case:
+Use this to choose the starting level for a use case. The level describes what a person still decides ([Chapter 10](./10-autonomy-notifications.md#autonomy-is-a-dial)); the ceiling that enforces it is covered in [Chapter 8](./08-policy-guardrails.md#autonomy-ceilings-in-practice).
 
 ```
-                        Low Impact              High Impact
-                    ┌─────────────────────┬─────────────────────┐
-                    │                     │                     │
-  High Confidence   │  Tier 2: DRAFT      │  Tier 3: SANDBOX    │
-  (well-understood  │  Auto-create PRs    │  Execute in sandbox │
-   problem, good    │  No approval needed │  + human approval   │
-   training data)   │                     │                     │
-                    │  Examples:          │  Examples:          │
-                    │  - Encryption fixes │  - Multi-resource   │
-                    │  - Tag enforcement  │    drift fixes      │
-                    │  - Naming fixes     │  - Cross-env changes│
-                    ├─────────────────────┼─────────────────────┤
-                    │                     │                     │
-  Low Confidence    │  Tier 1: RECOMMEND  │  Tier 0: OBSERVE    │
-  (novel problem,   │  Suggest changes    │  Read-only analysis │
-   ambiguous req)   │  Human decides      │  Human acts         │
-                    │                     │                     │
-                    │  Examples:          │  Examples:          │
-                    │  - Cost optimization│  - Incident triage  │
-                    │  - Architecture recs│  - Root cause       │
-                    │  - Migration plans  │    analysis         │
-                    └─────────────────────┴─────────────────────┘
+                        Reversible, bounded         Sensitive or wide blast radius
+                    ┌──────────────────────────┬──────────────────────────────┐
+                    │                          │                              │
+  High Confidence   │  Level 2: GOVERNED       │  Level 1: PROPOSE            │
+  (well-understood  │  Gates land eligible     │  Agent opens the PR,         │
+   problem, strong  │  PRs; people handle      │  a person merges             │
+   track record)    │  exceptions              │                              │
+                    │  Examples:               │  Examples:                   │
+                    │  - Tag enforcement       │  - Multi-resource drift fixes│
+                    │  - Diagnostic settings   │  - Network rule changes      │
+                    │  - Closing public access │  - Cross-environment changes │
+                    ├──────────────────────────┼──────────────────────────────┤
+                    │                          │                              │
+  Low Confidence    │  Level 1: PROPOSE        │  Level 0: REACTIVE / OBSERVE │
+  (novel problem,   │  (or Observe while you   │  Agent analyzes when asked   │
+   ambiguous req)   │   build a track record)  │  or reports; a person acts   │
+                    │  Examples:               │  Examples:                   │
+                    │  - Cost optimization     │  - Incident triage           │
+                    │  - Architecture recs     │  - Root cause analysis       │
+                    │  - Migration plans       │  - Anything touching identity│
+                    └──────────────────────────┴──────────────────────────────┘
 ```
 
-### Tier Progression
+Irreversible actions (deleting data stores, identity, secrets, state) stay with a person at every level.
 
-Start every new use case at Tier 0. Promote based on evidence:
+### Climbing the Ladder
+
+Autonomy is earned by measurement, never granted. Promote one use case and one action class at a time, in one environment at a time, and make promotion a configuration change rather than a code change. Don't skip rungs.
 
 ```
-Tier 0 (OBSERVE)
-  │ Evidence: Agent analysis matches human analysis 90%+ of the time
+OBSERVE
+  │ Evidence: agent analysis matches a human's 90%+ of the time
   ▼
-Tier 1 (RECOMMEND)
-  │ Evidence: Agent recommendations accepted by humans 80%+ of the time
+RECOMMEND (reports with a suggested fix)
+  │ Evidence: recommendations accepted 80%+ of the time
   ▼
-Tier 2 (DRAFT)
-  │ Evidence: Agent PRs merged without modification 70%+ of the time
+PROPOSE (opens PRs)
+  │ Evidence: PRs merged without modification 70%+ of the time
   ▼
-Tier 3 (SANDBOX EXECUTE)
-  │ Evidence: Sandbox runs succeed without human intervention 95%+
+GOVERNED · non-production (gates land eligible PRs; start in shadow mode)
+  │ Evidence: 95%+ of governed changes verify cleanly, one action class at a time
   ▼
-Tier 4 (PROD WITH GATES)
-  │ Only for well-understood, low-blast-radius operations
-  │ Always with human approval gate
+GOVERNED · production
+    Requires: a non-production track record, a low blast radius,
+    a tested rollback and a post-apply health check
 ```
+
+Merge rate is the trust metric to watch at the Propose rung. Across our customers, 79% of agent-authored PRs are merged by the customers' own engineers, which is the kind of number that justifies trying Governed for the narrowest action classes, and not yet for everything.
+
+Shadow mode is how you collect evidence for the Governed rungs without taking the risk: the gateway records "would have landed" receipts while a person still clicks merge, and you compare its decisions with theirs ([Chapter 8](./08-policy-guardrails.md#receipts)). Move a use case back down when its numbers drop; demotion should be as cheap as promotion.
 
 ---
 
@@ -80,34 +89,46 @@ Tier 4 (PROD WITH GATES)
 
 | NIST AI RMF Function | What It Means | How This Guide Addresses It |
 |----------------------|---------------|---------------------------|
-| **GOVERN** | Establish AI risk governance | Autonomy tiers, policy engine, org-level policies (Ch 8) |
+| **GOVERN** | Establish AI risk governance | Autonomy levels and ceilings, named goal owners, policy engine, org-level policies (Ch 8, 10) |
 | **MAP** | Understand AI risks in context | Risk matrix above, agent-specific threat modeling |
 | **MEASURE** | Assess and track risks | Observability, action trails, trajectory tests (Ch 9, 11) |
 | **MANAGE** | Treat and monitor risks | Guardrails, sandboxing, credential isolation, notifications (Ch 4-8, 10) |
 
-### OWASP LLM Top 10 Coverage
+### OWASP LLM Top 10 (2025) Coverage
 
 | OWASP Risk | Relevant Chapters |
 |-----------|-------------------|
-| LLM01: Prompt Injection | Ch 4 (Sandbox), Ch 8 (Policy), Ch 12 (Testing) |
-| LLM02: Insecure Output Handling | Ch 7 (PR validation), Ch 9 (Redaction) |
-| LLM03: Training Data Poisoning | Out of scope (use trusted LLM providers) |
-| LLM04: Model Denial of Service | Ch 8 (Budget limits), Ch 2 (Queue management) |
-| LLM05: Supply Chain Vulnerabilities | Ch 3 (Skill system, no untrusted skills) |
-| LLM06: Sensitive Information Disclosure | Ch 5 (Credentials), Ch 9 (Redaction) |
-| LLM07: Insecure Plugin Design | Ch 3 (Skills as files, typed interfaces) |
-| LLM08: Excessive Agency | Ch 8 (Tool restrictions, autonomy tiers) |
-| LLM09: Overreliance | Ch 7 (Human review), Ch 8 (HITL checkpoints) |
-| LLM10: Model Theft | Out of scope (use hosted LLM APIs) |
+| LLM01: Prompt Injection | Ch 4 (Sandbox), Ch 8 (Policy), Ch 11 (Testing) |
+| LLM02: Sensitive Information Disclosure | Ch 5 (Credentials), Ch 9 (Redaction) |
+| LLM03: Supply Chain | Ch 3 (Skill and MCP server vetting) |
+| LLM04: Data and Model Poisoning | Ch 6 (Governed agent memory, trusted sources); model training is out of scope |
+| LLM05: Improper Output Handling | Ch 7 (PR validation), Ch 8 (Pre-execution validation) |
+| LLM06: Excessive Agency | Ch 8 (Tool restrictions, autonomy ceilings, governed gateways) |
+| LLM07: System Prompt Leakage | Ch 5 (No secrets in prompts), Ch 8 (Policy lives in code, not the prompt) |
+| LLM08: Vector and Embedding Weaknesses | Ch 6 (RAG and tenant-scoped retrieval) |
+| LLM09: Misinformation | Ch 7 (Deterministic validation), Ch 10 (Trust the signal first) |
+| LLM10: Unbounded Consumption | Ch 8 (Budget limits), Ch 10 (Wake and token budgets) |
+
+### OWASP Top 10 for Agentic Applications
+
+OWASP's agentic list (published December 2025) fits infrastructure agents more closely than the LLM list, because it is about what agents do rather than what models say. The risks that matter most here are goal hijacking through injected content (fence outside text as untrusted and freeze goals at approval, Ch 10, 11), tool misuse and privilege abuse (ceilings, frozen per-run policy and short-lived credentials, Ch 5, 8), memory poisoning (Ch 6), cascading failures across agents and replicas (one owner per goal, Ch 10), and rogue or unmonitored agents (receipts, failure-pattern alerts and a tested stop button, Ch 8, 9, 10).
+
+### Accountability and Regulation
+
+An agent can't be accountable, so someone always is. European regulation is explicit about who:
+
+- **NIS2** (Article 20) makes management bodies approve cybersecurity risk measures and lets them be held liable for them. **DORA** (Article 5) does the same for financial entities' ICT risk. If an agent changes your infrastructure, management needs to be able to see who set its level, who owns its goals, and what it did.
+- **The EU AI Act's human oversight requirements** (Article 14) ask for the ability to understand, override and stop a system, and warn explicitly about automation bias. A named owner per goal, receipts for every action and an emergency stop that has actually been tested map directly onto this. The AI Omnibus adopted in 2026 moved the obligations for Annex III high-risk systems to 2027-12-02; check whether your use case is in scope rather than assuming it is or isn't.
+- **ISO/IEC 42001** (AI management systems) and the **NIST AI 600-1** generative AI profile are the management-system and risk-profile references auditors increasingly ask about.
 
 ### SOC 2 Considerations
 
 | SOC 2 Criteria | Agent-Relevant Control | Implementation |
 |---------------|----------------------|----------------|
 | CC6.1 - Logical access | Agent credential management | Short-lived tokens, scoped permissions (Ch 5) |
-| CC6.3 - Authorized access | Tool allow/deny lists | Policy engine, tier-based restrictions (Ch 8) |
+| CC6.3 - Authorized access | Tool allow/deny lists | Policy engine, autonomy ceilings frozen per run (Ch 8) |
 | CC7.2 - Monitoring | Agent activity monitoring | Action trails, dashboards, alerts (Ch 9, 10) |
-| CC8.1 - Change management | PR-based change control | Agent changes go through standard CI/CD (Ch 7) |
+| CC8.1 - Change management | PR-based change control | Agent changes go through standard CI/CD; governed changes carry receipts (Ch 7, 8) |
 
 ---
 
@@ -173,7 +194,17 @@ NOTIFICATIONS
 [ ] Escalation chain for critical failures
 [ ] Daily digest scheduled
 
+AUTONOMY
+[ ] Every use case starts at Observe or Propose; levels recorded per use case
+[ ] Autonomy ceiling starts at Off; changes are admin-only and audited
+[ ] Emergency stop tested end to end
+[ ] Signal eligibility rules and fan-out caps in place before goals are enabled
+[ ] One owner per goal across replicas; retry budget tied to the source observation
+[ ] Wake cadence and daily wake/token budgets configured
+
 MONITORING
+[ ] End-to-end canary per launcher type (chat, schedule, review, goal), leader-leased
+[ ] Failure-pattern alerts (new error class, bursts, per-org failure rate)
 [ ] Stuck/stalled task detection active
 [ ] Unacknowledged message recovery on worker startup
 [ ] Alert on agent failure rate > threshold
@@ -198,7 +229,8 @@ SESSION MANAGEMENT
 GOVERNANCE
 [ ] Organization-level policies defined and injected
 [ ] Managed agent definitions reviewed; project/user definitions cannot expand beyond enterprise policy
-[ ] Autonomy tiers assigned per use case
+[ ] Promotion evidence reviewed before any use case moves to Governed
+[ ] Named owner for every standing goal; owner-removal fallback tested
 [ ] Monthly action trail review process established
 [ ] Incident response plan for agent failures documented
 ```
@@ -251,18 +283,24 @@ Redis Streams with consumer groups for dispatch, separate streams for output.
 
 ---
 
+## In Opengeni
+
+Two Opengeni features map directly onto the decisions in this chapter. [EU-only inference](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/eu-only-inference.md) keeps every model call for an organization on EU-processing routes, enforced on the server and failing closed, which settles the "where does our data go" question before the first run. And because Opengeni is Apache-2.0 with a Helm chart and reference Terraform for Azure, AWS and GCP ([deployment](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/deployment.md)), "can we switch, and can we run it ourselves" has a concrete answer.
+
+---
+
 ## Summary
 
 The six planes of an infrastructure agent system:
 
 1. **Ingestion** — how work enters the system (webhooks, schedules, chat, APIs)
-2. **Policy** — what agents are allowed to do (tiers, tool lists, budgets)
+2. **Policy** — what agents are allowed to do (autonomy ceilings, governed gates, tool lists, budgets)
 3. **Execution** — how agents run in isolation (sandboxed containers, stateless workers)
 4. **Integration** — how agents access external systems (short-lived credentials, typed skills)
 5. **Change Control** — how changes land (PRs, validation loops, CI/CD)
 6. **Observability** — how you see what happened (action trails, OTel, notifications)
 
-Get them wrong and you get the incidents from the report: malicious skills, credential theft, runaway costs, and enterprise bans.
+Get them wrong and you get the incidents this guide keeps returning to: malicious skills, credential theft, runaway costs, agents that fail silently, and enterprise bans. Get them right and you can turn the dial up one use case at a time, because the guardrails are what let you go faster.
 
 ---
 

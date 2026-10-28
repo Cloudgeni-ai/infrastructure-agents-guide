@@ -17,6 +17,7 @@ graph TB
         A2[Schedules] --> IP
         A3[User Chat] --> IP
         A4[API Calls] --> IP
+        A5[Goals] --> IP
     end
 
     subgraph "2. Policy Plane"
@@ -66,6 +67,7 @@ How work enters the system. Infrastructure agents respond to multiple signal typ
 | User chat | "Fix this S3 bucket policy" | Interactive |
 | API calls | CI/CD pipeline triggers agent review | Programmatic |
 | Alerts | PagerDuty incident, CloudWatch alarm | Reactive |
+| Goals | "Keep every storage account private", re-assessed on a cadence | Goal-driven |
 
 ### Architecture Pattern: Signal Router
 
@@ -103,30 +105,38 @@ interface AgentTask {
 
 The policy plane gates every action before execution. It decides what agents are allowed to do before they do it.
 
-### Core Concept: Autonomy Tiers
+### Core Concept: The Autonomy Dial
 
-Not all actions carry equal risk. Define tiers and bind each to explicit permissions:
+Not all actions carry equal risk, and not all teams want the same thing from an agent. Treat autonomy as a dial with two sides. From the human's side, it is a **level**: what the agent does on its own and what a person still decides. From the runtime's side, it is a **ceiling**: what the agent is technically able to do, whatever it was asked.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Tier 0: OBSERVE           Read-only. Summarize, analyze.    │
+│  LEVEL (what you still decide)    CEILING (what is enforced) │
 │  ──────────────────────────────────────────────────────────  │
-│  Tier 1: RECOMMEND         Suggest changes. No execution.    │
+│  0 Reactive     every request     requester's own authority, │
+│                 and result        PR-only writes             │
 │  ──────────────────────────────────────────────────────────  │
-│  Tier 2: DRAFT             Create PRs. No merge/apply.       │
+│  1 Propose      every merge       Observe: read and report   │
+│                                   Propose: branches + PRs    │
 │  ──────────────────────────────────────────────────────────  │
-│  Tier 3: SANDBOX EXECUTE   Run in isolated environment.      │
+│  2 Governed     risky changes     Governed: eligible PRs land│
+│                                   via server-side gates      │
 │  ──────────────────────────────────────────────────────────  │
-│  Tier 4: PROD WITH GATES   Execute in prod with approvals.   │
+│  3 Goal-driven  goals and         any ceiling; the agent     │
+│                 exceptions        pursues goals continuously │
 └──────────────────────────────────────────────────────────────┘
+   Emergency stop: forces Off.  Break-glass: a separate system.
 ```
+
+The level is chosen per use case and earned on evidence. [Chapter 10](./10-autonomy-notifications.md#autonomy-is-a-dial) covers the levels, [Chapter 8](./08-policy-guardrails.md#autonomy-ceilings-in-practice) the ceilings and gates, and [Chapter 13](./13-risk-framework.md#autonomy-decision-matrix) how to promote a use case from one level to the next.
 
 ### Policy Engine Pattern
 
 ```typescript
 interface PolicyDecision {
   allowed: boolean;
-  tier: 0 | 1 | 2 | 3 | 4;
+  ceiling: 'off' | 'observe' | 'propose' | 'governed';
+  frozenAt: string;               // policy is frozen per run; live state may only lower it
   reason: string;
   requiredApprovals?: string[];   // Human approvers needed
   constraints?: {
@@ -146,8 +156,8 @@ function evaluatePolicy(
 ): PolicyDecision {
   // 1. Check org-level policies (e.g., "no prod changes without approval")
   // 2. Check agent-level constraints (e.g., max turns, allowed tools)
-  // 3. Check resource-level rules (e.g., "production namespace = Tier 4")
-  // 4. Return composite decision with most restrictive constraints
+  // 3. Check resource-level rules (e.g., "production needs the production opt-in")
+  // 4. Return composite decision with most restrictive constraints (unknown = deny)
 }
 ```
 
@@ -217,7 +227,7 @@ graph LR
 |-----------|-----------|------------|----------|
 | **Redis Streams** | Fast, consumer groups, message persistence, built-in backpressure | Data loss risk if not persisted; memory-bound | Real-time, low-latency dispatch |
 | **BullMQ** (Redis-backed) | Rich job features (retry, delay, priority), Node.js native | Tied to Redis and Node.js | Node.js-centric architectures |
-| **AWS SQS + Lambda** | Serverless, scales to zero, dead-letter queues | 256KB message limit; eventual consistency | AWS-native, bursty workloads |
+| **AWS SQS + Lambda** | Serverless, scales to zero, dead-letter queues | 1 MiB message limit; no consumer groups or replay | AWS-native, bursty workloads |
 | **RabbitMQ** | Flexible routing, mature, battle-tested | Operational overhead; clustering is complex | Complex routing needs |
 | **Temporal** | Durable workflows, built-in retry/timeout, replay | Heavy runtime; learning curve | Long-running, multi-step agent workflows |
 | **PostgreSQL SKIP LOCKED** | No extra infra; ACID guarantees | Polling-based; no pub/sub; limited throughput | Small-scale, single-DB architectures |
@@ -253,6 +263,12 @@ Every agent action that modifies infrastructure goes through the same change pip
 
 ```
 Agent writes code → Agent creates PR → CI validates → Human reviews → CI applies
+```
+
+At the Governed level, a server-owned gate can take the place of the human reviewer for eligible, low-risk changes. The shape stays the same, and the agent still never merges or applies anything itself:
+
+```
+Agent writes code → Agent creates PR → CI validates → Gateway checks evidence and limits → CI applies → Verification scan
 ```
 
 **Never**:
@@ -295,7 +311,7 @@ sequenceDiagram
 
     Scanner->>API: Finding: S3 bucket missing encryption
     API->>Policy: Evaluate: can agent remediate?
-    Policy-->>API: Allowed (Tier 2: draft PR, max 5 iterations)
+    Policy-->>API: Allowed (ceiling: Propose, max 5 iterations)
 
     API->>Queue: Dispatch remediation task
     Queue->>Worker: Claim task
@@ -318,6 +334,16 @@ sequenceDiagram
 
 ---
 
+## In Opengeni
+
+Opengeni is our open-source (Apache-2.0) implementation of the execution, integration and observability planes in this chapter. It is deliberately not the agent: it is everything the agent needs around it, meaning durable sessions, a replayable event log, approvals, governed credentials, sandboxes and connected machines. A product such as Cloudgeni keeps the ingestion, policy and change-control planes for its own domain and calls Opengeni through its session API. The [architecture reference](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/architecture.md) walks through the packages and data flow, and [product integration](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/product-integration.md) shows the split between what the product owns and what Opengeni owns.
+
+---
+
 ## Next Chapter
 
 [Chapter 2: Agent Runtime & Orchestration →](./02-agent-runtime.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*

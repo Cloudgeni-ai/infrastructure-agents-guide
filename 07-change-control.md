@@ -48,7 +48,8 @@ stateDiagram-v2
     CIRuns --> AgentFix: CI fails (agent gets feedback)
     AgentFix --> Validate: Agent fixes and re-validates
 
-    Escalate --> CreatePR: Create PR with notes about remaining drift
+    Escalate --> DraftPR: Draft PR marked not converged, remaining plan diff attached
+    DraftPR --> HumanReview: Engineer decides
     ReadyForReview --> HumanReview: Engineer reviews
     HumanReview --> Merged: Approved & merged
     HumanReview --> AgentFix: Changes requested
@@ -90,11 +91,14 @@ async function validateAndCreatePR(
     );
   }
 
-  // Max iterations reached — create PR anyway with documentation
+  // Max iterations reached — open a DRAFT PR that says it did not converge.
+  // Never claim success; the remaining plan diff is the main content.
   return await createPullRequest(context, {
-    title: `fix: ${context.findingTitle} (needs review)`,
+    title: `[not converged] fix: ${context.findingTitle}`,
+    draft: true,
     body: formatPRBody(context, lastPlanResult, {
-      note: `Agent reached max iterations (${maxIterations}). Remaining drift documented below.`,
+      note: `Agent stopped after ${maxIterations} iterations without reaching zero drift. ` +
+            `The remaining plan diff is attached below. Do not merge without review.`,
     }),
     validationPassed: false,
     iterations: maxIterations,
@@ -158,24 +162,25 @@ Each step exits non-zero on failure. The agent reads the error output, fixes the
 
 Run these against generated `.tf`, `.yaml`, `.bicep`, or `.json` files before they reach a PR:
 
-| Tool | What It Catches | Scans | Stars |
-|------|----------------|-------|-------|
-| [Checkov](https://github.com/bridgecrewio/checkov) | 1,000+ security policies (CIS, NIST, PCI-DSS, HIPAA) | Terraform, CloudFormation, Bicep, Kubernetes, Helm, Dockerfile | ~8.5k |
-| [Trivy](https://github.com/aquasecurity/trivy) (IaC mode) | Misconfigurations, vulnerabilities, secrets in IaC files | Terraform, CloudFormation, Bicep, Kubernetes, Dockerfile | ~32k |
-| [Prowler](https://github.com/prowler-cloud/prowler) | Cloud account posture (CIS, SOC2, GDPR, HIPAA) — runs against live accounts | AWS, Azure, GCP, Kubernetes | ~12k |
-| [KICS](https://github.com/Checkmarx/kics) | 2,400+ queries for IaC misconfigurations | Terraform, CloudFormation, Ansible, Kubernetes, Pulumi, CDK | ~2.5k |
-| [Terrascan](https://github.com/tenable/terrascan) | 500+ OPA/Rego-based policies covering CIS benchmarks | Terraform, Kubernetes, Helm, CloudFormation, Dockerfile | ~5.2k |
-| [ScoutSuite](https://github.com/nccgroup/ScoutSuite) | Multi-cloud security audit (gathers config via cloud APIs) | AWS, Azure, GCP, Alibaba, Oracle Cloud | ~7.2k |
-| [Semgrep](https://github.com/semgrep/semgrep) | Custom pattern-matching rules (flexible, write your own) | 30+ languages including HCL | ~14k |
+| Tool | What It Catches | Scans |
+|------|----------------|-------|
+| [Checkov](https://github.com/bridgecrewio/checkov) | 1,000+ security policies (CIS, NIST, PCI-DSS, HIPAA) | Terraform, CloudFormation, Bicep, Kubernetes, Helm, Dockerfile |
+| [Trivy](https://github.com/aquasecurity/trivy) (IaC mode) | Misconfigurations, vulnerabilities, secrets in IaC files | Terraform, CloudFormation, Bicep, Kubernetes, Dockerfile |
+| [Prowler](https://github.com/prowler-cloud/prowler) | Cloud account posture (CIS, SOC2, GDPR, HIPAA) — runs against live accounts | AWS, Azure, GCP, Kubernetes |
+| [KICS](https://github.com/Checkmarx/kics) | 2,400+ queries for IaC misconfigurations | Terraform, CloudFormation, Ansible, Kubernetes, Pulumi, CDK |
+| [ScoutSuite](https://github.com/nccgroup/ScoutSuite) | Multi-cloud security audit (gathers config via cloud APIs) | AWS, Azure, GCP, Alibaba, Oracle Cloud |
+| [Semgrep](https://github.com/semgrep/semgrep) | Custom pattern-matching rules (flexible, write your own) | 30+ languages including HCL |
+
+tfsec is deprecated in favour of Trivy's IaC scanning, and Terrascan has been archived; migrate any pipelines that still call them.
 
 **Agent usage**: `checkov -d . --framework terraform --compact --quiet` or `trivy config . --exit-code 1`. Parse the JSON output, feed failures back into the agent context, iterate.
 
 #### Cost Estimation
 
-| Tool | What It Does | Stars |
-|------|-------------|-------|
-| [Infracost](https://github.com/infracost/infracost) | Shows monthly cost estimate for Terraform changes; diffs against current state | ~11k |
-| [OpenCost](https://github.com/opencost/opencost) | Real-time Kubernetes workload cost allocation (CNCF incubating) | ~6.4k |
+| Tool | What It Does |
+|------|-------------|
+| [Infracost](https://github.com/infracost/infracost) | Shows monthly cost estimate for Terraform changes; diffs against current state |
+| [OpenCost](https://github.com/opencost/opencost) | Real-time Kubernetes workload cost allocation (CNCF incubating) |
 
 **Agent usage**: `infracost breakdown --path . --format json`. Check `totalMonthlyCost` against a budget threshold. Include the estimate in the PR body so reviewers see cost impact.
 
@@ -186,38 +191,38 @@ Cloud providers also expose pricing APIs for custom cost checks:
 
 #### Linting & Formatting
 
-| Tool | What It Catches | Stars |
-|------|----------------|-------|
-| [TFLint](https://github.com/terraform-linters/tflint) | Errors `terraform plan` misses — invalid AMI IDs, deprecated arguments, provider-specific rules | ~5.6k |
-| [cfn-lint](https://github.com/aws-cloudformation/cfn-lint) | CloudFormation template errors (schema, best practices, custom rules) | ~2.6k |
-| [terraform-docs](https://github.com/terraform-docs/terraform-docs) | Missing module documentation, incomplete input/output descriptions | ~4.6k |
-| [Terratag](https://github.com/env0/terratag) | Missing tags on resources (enforces tagging policies) | ~1k |
-| [Pike](https://github.com/JamesWoolfenden/pike) | Calculates minimum IAM permissions required to apply generated code | ~800 |
-| `terraform fmt -check` | Canonical formatting | built-in |
-| `terraform validate` | Syntax and internal consistency (no provider calls) | built-in |
-| `az bicep lint` | Bicep syntax errors and best practice violations | built-in |
+| Tool | What It Catches |
+|------|----------------|
+| [TFLint](https://github.com/terraform-linters/tflint) | Errors `terraform plan` misses — invalid AMI IDs, deprecated arguments, provider-specific rules |
+| [cfn-lint](https://github.com/aws-cloudformation/cfn-lint) | CloudFormation template errors (schema, best practices, custom rules) |
+| [terraform-docs](https://github.com/terraform-docs/terraform-docs) | Missing module documentation, incomplete input/output descriptions |
+| [Terratag](https://github.com/env0/terratag) | Missing tags on resources (enforces tagging policies) |
+| [Pike](https://github.com/JamesWoolfenden/pike) | Calculates minimum IAM permissions required to apply generated code |
+| `terraform fmt -check` | Canonical formatting |
+| `terraform validate` | Syntax and internal consistency (no provider calls) |
+| `az bicep lint` | Bicep syntax errors and best practice violations |
 
 #### Policy-as-Code Engines
 
 Write your own org-specific rules and enforce them on every generated change:
 
-| Tool | What It Does | Stars |
-|------|-------------|-------|
-| [OPA](https://github.com/open-policy-agent/opa) | General-purpose policy engine (Rego language). CNCF graduated. | ~11.2k |
-| [Conftest](https://github.com/open-policy-agent/conftest) | Run OPA/Rego policies against Terraform plan JSON, Kubernetes manifests, Dockerfiles | ~3.1k |
-| [Kyverno](https://github.com/kyverno/kyverno) | Kubernetes-native policy engine (YAML policies, no Rego). CNCF graduated. | ~7.4k |
-| [Cloud Custodian](https://github.com/cloud-custodian/cloud-custodian) | YAML-based rules engine for cloud security, cost, and governance (CNCF incubating) | ~5.8k |
+| Tool | What It Does |
+|------|-------------|
+| [OPA](https://github.com/open-policy-agent/opa) | General-purpose policy engine (Rego language). CNCF graduated. |
+| [Conftest](https://github.com/open-policy-agent/conftest) | Run OPA/Rego policies against Terraform plan JSON, Kubernetes manifests, Dockerfiles |
+| [Kyverno](https://github.com/kyverno/kyverno) | Kubernetes-native policy engine (YAML policies, no Rego). CNCF graduated. |
+| [Cloud Custodian](https://github.com/cloud-custodian/cloud-custodian) | YAML-based rules engine for cloud security, cost, and governance (CNCF incubating) |
 
 **Agent usage**: `terraform show -json plan.tfplan | conftest test -` runs your Rego policies against the actual plan output — not just the source files but the resolved plan with all variables expanded.
 
 #### Drift Detection
 
-| Tool | What It Does | Stars |
-|------|-------------|-------|
-| `terraform plan -refresh-only` | Detects drift between Terraform state and actual cloud resources | built-in |
-| [Terramate](https://github.com/terramate-io/terramate) | IaC orchestration with built-in drift detection and Slack notifications | ~3.4k |
-| [driftctl](https://github.com/snyk/driftctl) | Compares Terraform state with actual cloud resources (maintenance mode) | ~2.4k |
-| [cloud-nuke](https://github.com/gruntwork-io/cloud-nuke) | Deletes orphaned resources in cloud accounts (cleanup tool) | ~3.1k |
+| Tool | What It Does |
+|------|-------------|
+| `terraform plan -refresh-only` | Detects drift between Terraform state and actual cloud resources |
+| [Terramate](https://github.com/terramate-io/terramate) | IaC orchestration with built-in drift detection and Slack notifications |
+| [driftctl](https://github.com/snyk/driftctl) | Compares Terraform state with actual cloud resources (maintenance mode) |
+| [cloud-nuke](https://github.com/gruntwork-io/cloud-nuke) | Deletes orphaned resources in cloud accounts (cleanup tool) |
 
 ### Cloud Provider Validation APIs
 
@@ -311,11 +316,13 @@ Give reviewers full context in the PR body:
 
 ````markdown
 ## Summary
-Fixes compliance finding: S3 bucket `my-bucket` missing server-side encryption.
+Fixes policy finding: S3 bucket `prod-logs` uses default SSE-S3 encryption, but
+the organization's encryption policy requires SSE-KMS with the organization key.
 
 ## Changes
-- Added `server_side_encryption_configuration` block to `modules/storage/main.tf`
-- Set default encryption to `aws:kms` with auto-generated key
+- Added `aws_s3_bucket_server_side_encryption_configuration.prod_logs` to `modules/storage/main.tf`
+- Set default encryption to `aws:kms` with the existing organization key `alias/infra-key`
+- Enabled S3 Bucket Keys to reduce KMS request costs
 
 ## Validation
 - Terraform plan: **PASSED** (0 drift remaining)
@@ -324,23 +331,23 @@ Fixes compliance finding: S3 bucket `my-bucket` missing server-side encryption.
 
 ## Plan Output
 ```hcl
-# aws_s3_bucket.my_bucket will be updated in-place
-~ resource "aws_s3_bucket" "my_bucket" {
-    + server_side_encryption_configuration {
-        + rule {
-            + apply_server_side_encryption_by_default {
-                + sse_algorithm = "aws:kms"
-              }
+# aws_s3_bucket_server_side_encryption_configuration.prod_logs will be created
++ resource "aws_s3_bucket_server_side_encryption_configuration" "prod_logs" {
+    + bucket = "prod-logs"
+    + rule {
+        + bucket_key_enabled = true
+        + apply_server_side_encryption_by_default {
+            + kms_master_key_id = "arn:aws:kms:us-east-1:123456789012:alias/infra-key"
+            + sse_algorithm     = "aws:kms"
           }
       }
   }
 ```
 
 ## Finding Details
-- Source: Prowler
+- Source: Organization policy "Encryption at Rest"
 - Severity: HIGH
-- Framework: CIS AWS Benchmark v3.0
-- Control: 2.1.1 - Ensure S3 bucket has server-side encryption enabled
+- Related control: AWS Security Hub S3.17 (S3 general purpose buckets should be encrypted at rest with AWS KMS keys)
 
 ````
 
@@ -361,27 +368,33 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
       id-token: write  # For OIDC auth
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.17.0
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: terraform init
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -out=plan.tfplan -json > plan.json
+        run: |
+          terraform plan -out=plan.tfplan
+          terraform show -json plan.tfplan > plan.json
 
       - name: Upload Plan Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: terraform-plan
           path: plan.json
 
       - name: Comment PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const plan = require('./plan.json');
@@ -394,7 +407,7 @@ jobs:
 # .gitlab-ci.yml
 terraform-plan:
   stage: validate
-  image: hashicorp/terraform:1.9
+  image: hashicorp/terraform:1.17
   script:
     - terraform init
     - terraform plan -out=plan.tfplan
@@ -440,7 +453,9 @@ version: "1"
 stacks:
   production:
     project_root: infrastructure/
-    terraform_version: "1.9.0"
+    # Spacelift offers Terraform only up to 1.5.7 (the last MPL release) plus
+    # all OpenTofu releases; select OpenTofu as the stack's workflow tool.
+    terraform_version: "1.13.2"
     auto_apply: false  # Require manual approval
     before_plan:
       - checkov -d . --framework terraform
@@ -465,6 +480,22 @@ The `agent/` prefix makes it easy to filter agent-created branches in CI rules, 
 
 ---
 
+## Automated PR Reviews
+
+Agents also review pull requests that humans and other agents open. Review is read-heavy and looks low risk, but it runs unattended on every push, so small lifecycle mistakes turn into a steady stream of silent failures. What held up in production:
+
+- **Pin the review to the head commit SHA, not the branch name.** PRs are often merged seconds after the trigger fires, and merging deletes the branch. Reviews that cloned by branch name failed with "couldn't find remote ref"; we counted 45 of these in 30 days before switching to the SHA, which stays fetchable after the branch is gone.
+- **Cancel on close.** When a PR is closed or merged, cancel queued and running reviews for it rather than finishing work nobody will read.
+- **Collapse rapid pushes.** Allow at most one running and one queued review per PR. A new push replaces the queued one; it does not add a third.
+- **The server owns the final comment.** The agent produces findings as structured output; the server validates them, renders the comment, and posts or updates it. A model that posts its own comments can post twice, post partial output, or skip posting and still report success.
+- **A verdict is advisory unless the server enforces it.** A "change safety" summary (PASS, WARN, or BLOCK across deletions, public exposure, IAM, policy, and cost) is useful to reviewers, but on its own it does not stop a merge. If BLOCK should stop a merge, publish it as a required status check from the server, never from the agent's text.
+
+### When a Gate, Not a Person, Merges
+
+Some teams go one step further and let a server-side gate merge eligible PRs: small, low-risk changes that pass every deterministic check and the policy rules. This is the "governed" level described in [Chapter 10](./10-autonomy-notifications.md#autonomy-is-a-dial), with its controls in [Chapter 8](./08-policy-guardrails.md). The agent itself never merges, even at that level. Changes still flow through a PR and the normal pipeline, so the audit trail, branch protection, and rollback path in this chapter apply unchanged; only the approver is different.
+
+---
+
 ## Hard Rules (System Prompt Constraints)
 
 Encode safety rules directly into the agent's system prompt:
@@ -474,11 +505,12 @@ Encode safety rules directly into the agent's system prompt:
 
 1. NEVER push directly to main or master branch
 2. NEVER run `terraform apply` or `az deployment create` — only plan/what-if
-3. NEVER create a PR until the validation pipeline shows zero drift
+3. NEVER open a ready-for-review PR until the validation pipeline shows zero drift
 4. ALWAYS create a new branch for changes
 5. ALWAYS include the finding ID and validation results in the PR body
-6. If you reach 10 plan iterations without zero drift, create the PR anyway
-   with full documentation of remaining drift
+6. If you reach 10 plan iterations without zero drift, you MAY open a DRAFT PR
+   titled "[not converged]" with the remaining plan diff. NEVER describe it as
+   a fix or claim success
 7. NEVER modify files outside the repository's IaC directories
 8. ALWAYS commit with a descriptive message referencing the finding
 9. If break-glass execution exists in your platform, it MUST use a separate workflow and credentials
@@ -486,6 +518,16 @@ Encode safety rules directly into the agent's system prompt:
 
 ---
 
+## In Opengeni
+
+Opengeni stays out of your change-control plane on purpose: an agent in Opengeni works in a sandbox checkout and opens pull requests through the Git credentials the host grants it, and the host product decides what happens next. Cloudgeni's governed merge and apply gateways ([Chapter 8](./08-policy-guardrails.md#governed-actions)) sit on the Cloudgeni side for that reason. Opengeni's [GitHub App binding](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/github-app.md) documents which repository authority a session can hold.
+
+---
+
 ## Next Chapter
 
 [Chapter 8: Policy & Guardrails →](./08-policy-guardrails.md)
+
+---
+
+*Built by the team at [Cloudgeni](https://cloudgeni.ai) — Scale your infrastructure team. With Agents. Safely.*
