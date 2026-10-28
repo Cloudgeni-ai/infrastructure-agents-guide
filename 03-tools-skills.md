@@ -545,6 +545,12 @@ This matches how the vendor skills are designed: HashiCorp's skills produce guid
 
 ---
 
+## In Opengeni
+
+Opengeni exposes integrations, Skills and plugins through one workspace [capability catalog](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/capabilities.md), and [MCP surfaces](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/mcp-surfaces.md) explains the eight places it touches MCP and which one to use. A host product can also attach [per-session MCP servers](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/session-mcp-servers.md) with per-session bearer credentials, which is how Cloudgeni gives its embedded agents the cloud, compliance and IaC tools without making them global to the deployment.
+
+---
+
 ## Next Chapter
 
 [Chapter 4: Sandboxed Execution →](./04-sandboxed-execution.md)

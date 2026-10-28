@@ -673,6 +673,12 @@ RUNTIME (Layer 3)
 
 ---
 
+## In Opengeni
+
+Several controls in this chapter are built into Opengeni. [Tool approvals](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/tool-approvals.md) give every tool an Allow, Ask or Block decision with a recommended default, evaluated on each call so long-running sessions pick up changes on their next turn. [Structured human input](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/human-input.md) lets an agent ask up to 20 questions with an expiry and resume the exact tool call after the answer, even across restarts. [Task usage limits](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/session-usage-limits.md) cap spend across a root session and every child agent it starts, [nested-agent depth](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/nested-agent-depth.md) is enforced at session creation, and [workspace pause timers](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/workspace-pause-timers.md) are a stop button with an optional resume time. Versioned workspace charters live in [workspace instruction policies](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/workspace-instruction-policies.md).
+
+---
+
 ## Next Chapter
 
 [Chapter 9: Observability & Audit →](./09-observability.md)

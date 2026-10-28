@@ -279,6 +279,12 @@ Once agents run on their own, the UI's main job shifts from accepting requests t
 
 ---
 
+## In Opengeni
+
+Opengeni comes with a web app for working with agents directly and a `SessionConversation` React component that a product can embed behind a tenant- and user-scoped proxy, so the organization API key stays on the product's server ([product integration](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/product-integration.md)). That is how Cloudgeni's own agent chat is built. Organizations, workspaces and personal workspaces follow the tenancy model in [organization tenancy](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/organization-tenancy.md). You can use it at [app.opengeni.ai](https://app.opengeni.ai) or self-host the same stack.
+
+---
+
 ## Next Chapter
 
 [Chapter 13: Risk Framework & Checklists →](./13-risk-framework.md)

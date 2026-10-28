@@ -334,6 +334,12 @@ sequenceDiagram
 
 ---
 
+## In Opengeni
+
+Opengeni is our open-source (Apache-2.0) implementation of the execution, integration and observability planes in this chapter. It is deliberately not the agent: it is everything the agent needs around it, meaning durable sessions, a replayable event log, approvals, governed credentials, sandboxes and connected machines. A product such as Cloudgeni keeps the ingestion, policy and change-control planes for its own domain and calls Opengeni through its session API. The [architecture reference](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/architecture.md) walks through the packages and data flow, and [product integration](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/product-integration.md) shows the split between what the product owns and what Opengeni owns.
+
+---
+
 ## Next Chapter
 
 [Chapter 2: Agent Runtime & Orchestration →](./02-agent-runtime.md)

@@ -534,6 +534,12 @@ SIGNALLING
 
 ---
 
+## In Opengeni
+
+The autonomy dial in this chapter is Cloudgeni's product layer. Underneath it, Opengeni provides the parts every autonomous agent needs: [session goals](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/goals.md) that keep an agent working until it completes with evidence or pauses with a rationale, scheduled tasks that re-resolve their owner's current access on every run and send a notice when it has drifted ([scheduled task access](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/scheduled-task-access.md)), [work discovery and durable work claims](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/work-discovery.md) so two sessions don't pick up the same job, a [Slack bot](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/slack-bot.md) for tasks and replies, and [workspace pause timers](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/workspace-pause-timers.md) as the stop button. If you are building your own autonomy layer, these are the pieces we would not build again.
+
+---
+
 ## Next Chapter
 
 [Chapter 11: Testing & Hardening →](./11-testing-hardening.md)

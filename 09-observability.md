@@ -406,6 +406,12 @@ function redactSensitive(text: string): string {
 
 ---
 
+## In Opengeni
+
+Opengeni's replayable event log is the action trail: every event of every session is stored in Postgres, and live views are built from it rather than alongside it. Its [application observability boundary](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/application-observability.md) keeps raw prompts, tool content and SQL out of telemetry, and records operational failures with a closed `errorClass` and `errorCode`, which is what makes the failure-pattern alerts above possible.
+
+---
+
 ## Next Chapter
 
 [Chapter 10: Autonomous Operations & Notifications →](./10-autonomy-notifications.md)

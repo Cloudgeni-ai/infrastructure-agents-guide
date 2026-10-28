@@ -390,6 +390,12 @@ ONGOING:
 
 ---
 
+## In Opengeni
+
+Opengeni ships an [agent behavior eval](https://github.com/Cloudgeni-ai/opengeni/blob/main/scripts/agent-behavior-eval/README.md) that runs a fixed set of scenarios against a real model through the real agent-turn path, scores each run, and gates prompt and agent-configuration releases. It runs nightly rather than in CI, because it costs real tokens.
+
+---
+
 ## Next Chapter
 
 [Chapter 12: UX, Usability & Team Onboarding →](./12-ux-usability.md)

@@ -380,7 +380,7 @@ interface KnowledgeMemory {
 
 Retrieval must enforce the same subject and workspace authorization as the source data; metadata filters are not a substitute for an authorization boundary. Show provenance and review status in the UI, expire operational facts, and support superseding rather than silently editing history. Store durable decisions and reusable facts — not hidden reasoning, raw credentials, or speculative diagnoses.
 
-[Opengeni](https://github.com/Cloudgeni-ai/opengeni) uses this pattern for reviewed workspace memory: agents can search approved memories and propose new ones, but a human or host API admits them into future retrieval context. The same control is useful for infrastructure ownership, runbook exceptions, and remediation lessons.
+The same control is useful for infrastructure ownership, runbook exceptions, and remediation lessons. See [In Opengeni](#in-opengeni) at the end of this chapter for a working implementation.
 
 ---
 
@@ -635,6 +635,12 @@ Stale data is worse than no data — an agent acting on a deleted resource waste
 | Documentation | Daily | Scheduled sync or webhook on change |
 
 For most infrastructure agents, **hourly cloud scans + git webhook triggers for IaC** provide sufficient freshness. Event-driven updates (CloudTrail → update database) are worth the complexity only for incident response agents that need to act within minutes.
+
+---
+
+## In Opengeni
+
+Opengeni's [Knowledge and Agent learning](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/knowledge.md) is the governed-memory pattern above: agents retain sources and findings as immutable revisions with pinned evidence, publication can require review, and search applies scope and access checks before ranking or counting anything. Behavioural preferences ("keep replies short") are routed to workspace instructions or Skills rather than stored as facts, which keeps retrieval from quietly turning into policy.
 
 ---
 

@@ -548,6 +548,12 @@ DENY:
 
 ---
 
+## In Opengeni
+
+Opengeni runs each session either in a managed sandbox (Docker, Modal, or Firecracker microVMs on its own [compute backend](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/compute-backend.md)) or on a [Connected Machine](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/connected-machines.md), such as a laptop, build server or GPU box that only dials out and never receives Opengeni credentials. [Sandbox Environments](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/rigs.md) are versioned setup-and-check layers over the platform image, verified before a session may use them, which is the provider-neutral sandbox contract described above.
+
+---
+
 ## Next Chapter
 
 [Chapter 5: Credential Management →](./05-credential-management.md)

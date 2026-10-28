@@ -859,6 +859,12 @@ The database answers "what happened"; the realtime bus answers "what is happenin
 
 ---
 
+## In Opengeni
+
+Opengeni implements the runtime patterns in this chapter. Every session event lands in Postgres first and live streams backfill from it, so a reconnecting client, a restarted worker and an auditor all see the same history. Turns, goal continuations, child-agent results and scheduled occurrences share one durable input lifecycle ([run lifecycle](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/run-lifecycle.md), [durable agent inputs](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/durable-agent-inputs.md)). The model a user picks is kept separate from the provider deployment that serves it ([model providers](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/model-providers.md)), and portable context compaction stores a plaintext checkpoint so a session can switch provider mid-way ([context compaction](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/context-compaction.md)). That is the "keep the conversation in your own format" rule above, implemented.
+
+---
+
 ## Next Chapter
 
 [Chapter 3: Tools, CLIs & Skills →](./03-tools-skills.md)

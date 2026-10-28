@@ -283,6 +283,12 @@ Redis Streams with consumer groups for dispatch, separate streams for output.
 
 ---
 
+## In Opengeni
+
+Two Opengeni features map directly onto the decisions in this chapter. [EU-only inference](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/eu-only-inference.md) keeps every model call for an organization on EU-processing routes, enforced on the server and failing closed, which settles the "where does our data go" question before the first run. And because Opengeni is Apache-2.0 with a Helm chart and reference Terraform for Azure, AWS and GCP ([deployment](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/deployment.md)), "can we switch, and can we run it ourselves" has a concrete answer.
+
+---
+
 ## Summary
 
 The six planes of an infrastructure agent system:

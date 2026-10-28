@@ -434,6 +434,12 @@ const item = await response.json();
 
 ---
 
+## In Opengeni
+
+Opengeni's [credential taxonomy](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/credentials.md) lists every credential it mints or accepts, who issues it and who may see it. Secrets are used through `{{secret:…}}` references that resolve only at the moment a tool runs, so the plaintext never enters the model context, events, approvals or logs ([secrets](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/secrets.md)), and [connected vaults](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/external-vaults.md) such as 1Password mirror item names and metadata, never values. For products like Cloudgeni, a signed [workspace credential provider](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/workspace-integrations.md) lets the host mint short-lived cloud and Git credentials per call, so the broker in this chapter stays with the product that owns the customer's trust.
+
+---
+
 ## Next Chapter
 
 [Chapter 6: The Data Plane →](./06-data-plane.md)

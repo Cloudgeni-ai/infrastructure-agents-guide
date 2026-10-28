@@ -518,6 +518,12 @@ Encode safety rules directly into the agent's system prompt:
 
 ---
 
+## In Opengeni
+
+Opengeni stays out of your change-control plane on purpose: an agent in Opengeni works in a sandbox checkout and opens pull requests through the Git credentials the host grants it, and the host product decides what happens next. Cloudgeni's governed merge and apply gateways ([Chapter 8](./08-policy-guardrails.md#governed-actions)) sit on the Cloudgeni side for that reason. Opengeni's [GitHub App binding](https://github.com/Cloudgeni-ai/opengeni/blob/main/docs/github-app.md) documents which repository authority a session can hold.
+
+---
+
 ## Next Chapter
 
 [Chapter 8: Policy & Guardrails →](./08-policy-guardrails.md)
